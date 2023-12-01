@@ -59,3 +59,11 @@ vehicle:
     max_accel: 2.0
     max_decel: -4.0
     max_speed: 40
+
+##############
+# LLMDriver module
+##############
+USE_LLM: True # whether use LLM
+ACC_DEFAULT: 3.0 # acceleration [m/s^2]
+DESCRIBE_JSON: "LLMDriver/prompt_template.json" # describe json file
+DECISION_TIME: 1.0 # decision time [s]

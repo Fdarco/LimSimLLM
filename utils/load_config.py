@@ -12,5 +12,8 @@ def load_config(config_file_path: str) -> dict:
     """
     with open(config_file_path, "r", encoding="utf-8") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
+    
+    if config["USE_LLM"]:
+        config["EGO_PLANNER"] = True
 
     return config

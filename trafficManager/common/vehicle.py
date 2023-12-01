@@ -35,6 +35,7 @@ class Behaviour(IntEnum):
     STOP = 5
     IN_JUNCTION = 6
     OVERTAKE = 7
+    IDLE = 8
     OTHER = 100
 
 
@@ -263,6 +264,8 @@ class Vehicle:
                 logging.info(f"Vehicle {self.id} is in {self.behaviour}")
             else:  # out junction
                 self.behaviour = Behaviour.KL
+        # if self.vtype == VehicleType.EGO:
+        #     print(f"Vehicle {self.id} is in {self.behaviour}")
 
 
 def create_vehicle(vehicle_info: Dict, roadgraph: RoadGraph, vtype_info: Any,

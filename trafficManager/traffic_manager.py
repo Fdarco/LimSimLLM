@@ -27,6 +27,10 @@ from utils.roadgraph import AbstractLane, JunctionLane, NormalLane, RoadGraph
 from utils import data_copy
 from utils.trajectory import State, Trajectory
 
+from LLMDriver.ego_vehicle_planner import LLMEgoPlanner
+from LLMDriver.describe import EnvScenario
+from LLMDriver.driverAgent import DriverAgent
+
 import logger
 
 
@@ -70,9 +74,19 @@ class TrafficManager:
 
         self.predictor = predictor if predictor is not None else UncontrolledPredictor()
         self.ego_decision = ego_decision if ego_decision is not None else EgoDecisionMaker()
-        self.ego_planner = ego_planner if ego_planner is not None else EgoPlanner()
+        # self.ego_planner = ego_planner if ego_planner is not None else EgoPlanner()
         self.multi_decision = multi_decision if multi_decision is not None else MultiDecisionMaker()
         self.multi_veh_planner = multi_veh_planner if multi_veh_planner is not None else MultiVehiclePlanner()
+        if ego_planner is not None:
+            self.ego_planner = ego_planner
+        elif self.config["USE_LLM"]:
+            self.ego_planner = LLMEgoPlanner()
+        else:
+            self.ego_planner = EgoPlanner()
+
+        if self.config["USE_LLM"]:
+            self.env_scenario = EnvScenario(self.config)
+            self.llm_driver = DriverAgent(verbose=True)
 
     def _set_up_keyboard_listener(self):
 
@@ -133,6 +147,17 @@ class TrafficManager:
             # only vehicles in AoI will be controlled
             if vehicle.vtype == VehicleType.OUT_OF_AOI:
                 continue
+
+            if self.config["USE_LLM"] and vehicle.vtype == VehicleType.EGO:
+                # 场景描述
+                if T - self.last_decision_time >= self.config["DECISION_TIME"]:
+                    env_describe = self.env_scenario.describe(observation, roadgraph, prediction, T, self.last_decision_time)
+                    self.last_decision_time = T
+                    # openai进行交互，得到决策结果
+                    action, response, human_question, fewshot_answer = self.llm_driver.few_shot_decision(env_describe[0], env_describe[1], env_describe[2])
+                    vehicle.behaviour = Behaviour(action)
+                continue
+
             vehicle.update_behaviour(roadgraph, KEY_INPUT)
             KEY_INPUT = ""
 
