@@ -182,3 +182,6 @@ report/
 
 *.pptx
 
+history_data
+db
+save_data.sh

@@ -86,7 +86,7 @@ class TrafficManager:
 
         if self.config["USE_LLM"]:
             self.env_scenario = EnvScenario(self.config)
-            self.llm_driver = DriverAgent(verbose=True)
+            self.llm_driver = DriverAgent()
 
     def _set_up_keyboard_listener(self):
 
@@ -148,16 +148,6 @@ class TrafficManager:
             if vehicle.vtype == VehicleType.OUT_OF_AOI:
                 continue
 
-            if self.config["USE_LLM"] and vehicle.vtype == VehicleType.EGO:
-                # 场景描述
-                if T - self.last_decision_time >= self.config["DECISION_TIME"]:
-                    env_describe = self.env_scenario.describe(observation, roadgraph, prediction, T, self.last_decision_time)
-                    self.last_decision_time = T
-                    # openai进行交互，得到决策结果
-                    action, response, human_question, fewshot_answer = self.llm_driver.few_shot_decision(env_describe[0], env_describe[1], env_describe[2])
-                    vehicle.behaviour = Behaviour(action)
-                continue
-
             vehicle.update_behaviour(roadgraph, KEY_INPUT)
             KEY_INPUT = ""
 
@@ -166,6 +156,24 @@ class TrafficManager:
             ego_id = vehicles_info.get("egoCar")["id"]
             if ego_id is None:
                 raise ValueError("Ego car is not found when EGO_PLANER is used.")
+
+        # an example of ego llm decision
+        if self.config["USE_LLM"]:
+            # 场景描述
+            if T - self.last_decision_time >= self.config["DECISION_TIME"]:
+                env_describe = self.env_scenario.describe(observation, roadgraph, prediction, T, self.last_decision_time)
+                self.last_decision_time = T
+                # openai进行交互，得到决策结果
+                action, response, human_question, fewshot_answer = self.llm_driver.few_shot_decision(env_describe[0], env_describe[1], env_describe[2])
+                vehicles[ego_id].behaviour = Behaviour(action)
+                # 更新决策结果
+                self.env_scenario.decision = vehicles[ego_id].behaviour
+                # if vehicle.current_state.vel < 10.0:
+                #     vehicle.behaviour = Behaviour.AC
+                # else:
+                #     vehicle.behaviour = Behaviour.DC
+            else:
+                vehicles[ego_id].behaviour = self.env_scenario.decision
 
         ego_decision: EgoDecision = None
         if self.config["USE_DECISION_MAKER"] and T - self.last_decision_time >= self.config["DECISION_INTERVAL"]:

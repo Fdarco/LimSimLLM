@@ -2,8 +2,15 @@ from simModel.egoTracking.model import Model
 from trafficManager.traffic_manager import TrafficManager
 
 import logger
+import argparse
 
 log = logger.setup_app_level_logger(file_name="app_debug.log")
+
+parser = argparse.ArgumentParser(description='input environment')
+#type是要传入的参数的数据类型  help是该参数的提示信息
+parser.add_argument('env', type=str, help='environment name', default='roundabout', choices=['corridor', 'CarlaTown05', 'CarlaTown06', 'bigInter', 'roundabout', 'bilbao', 'freewayB', 'Expressway_A'])
+
+args = parser.parse_args()
 
 
 file_paths = {
@@ -83,5 +90,5 @@ def run_model(
 
 
 if __name__ == "__main__":
-    net_file, rou_file = file_paths['CarlaTown06']
+    net_file, rou_file = file_paths[args.env]
     run_model(net_file, rou_file, ego_veh_id="11", carla_cosim=False)

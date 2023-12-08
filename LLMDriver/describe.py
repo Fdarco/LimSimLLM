@@ -54,6 +54,8 @@ class EnvScenario:
 
         self.decision = None
 
+        self.last_lane = 0
+
         with open(config["DESCRIBE_JSON"], 'r', encoding="utf-8") as f:
             self.des_json = json.load(f)
 
@@ -88,14 +90,24 @@ class EnvScenario:
         """
         if isinstance(self.current_lane, NormalLane):
             edge = self.current_lane.affiliated_edge
-            edge_num = edge.lane_num
+            edge_num = 0
+            for lane_id in edge.lanes:
+                lane = roadgraph.get_lane_by_id(lane_id)
+                if lane.width > self.config["vehicle"]["car"]["width"]:
+                    edge_num += 1
+            # edge_num = edge.available_edge_num()
             left_lane_num = 1
             left_lane_id = self.current_lane.left_lane()
+            
             while left_lane_id != None:
-                left_lane_num += 1
+                # print("left_lane_id is ", left_lane_id)
                 left_lane = roadgraph.get_lane_by_id(left_lane_id)
+                if left_lane.width > self.config["vehicle"]["car"]["width"]:
+                    left_lane_num += 1
                 left_lane_id = left_lane.left_lane()
-            current_lane_description = self.des_json["basic_description"]["current_lane_scenario_description"]["normal_lane"].format(edge_num = edge_num, left_lane_num = left_lane_num)
+            # print("edge_id is ", edge.id)
+            # print("left_lane_num: ", left_lane_num)
+            current_lane_description = self.des_json["basic_description"]["current_lane_scenario_description"]["normal_lane"].format(edge_num = edge_num, left_lane_num = left_lane_num, lane_length = round(self.current_lane.course_spline.s[-1], 3))
         else:
             current_lane_description = self.des_json["basic_description"]["current_lane_scenario_description"]["junction_lane"]
 
@@ -105,7 +117,12 @@ class EnvScenario:
         if next_lane != None:
             if isinstance(next_lane, NormalLane):
                 edge = next_lane.affiliated_edge
-                edge_num = edge.lane_num
+                edge_num = 0
+                for lane_id in edge.lanes:
+                    lane = roadgraph.get_lane_by_id(lane_id)
+                    if lane.width > self.config["vehicle"]["car"]["width"]:
+                        edge_num += 1
+                # edge_num = edge.available_edge_num()
                 next_lane_description = self.des_json["basic_description"]["next_lane_scenario_description"]["normal_lane"].format(edge_num = edge_num)
             else:
                 if next_lane.tlLogic == "actuated":
@@ -113,6 +130,9 @@ class EnvScenario:
                 else:
                     tl_state = "without"
                 dis_stop_line = round(self.current_lane.spline_length - self.ego_vehicle.current_state.s, 3)
+                # print("next_junction_id is ", next_lane.id)
+                # print("current_lane.spline_length: ", self.current_lane.spline_length)
+                # print("ego_vehicle.current_state.s: ", self.ego_vehicle.current_state.s)
                 next_lane_description = self.des_json["basic_description"]["next_lane_scenario_description"]["junction_lane"].format(tl_state = tl_state, dis_stop_line = dis_stop_line)
 
                 if tl_state == "with":
@@ -191,7 +211,7 @@ class EnvScenario:
         return emergency_description
 
     def getLastDecisionDescription(self, current_decision_time: float, last_decision_time: float) -> str:
-        """获取上一次决策的描述，包括上一次决策的时间，上一次决策的动作
+        """获取上一次决策的描述，包括上一次决策的时间，上一次决策的动作，上一次决策的结果
 
         Args:
             current_decision_time (float): 当前决策的时间
@@ -200,8 +220,17 @@ class EnvScenario:
         Returns:
             str: 上一次决策的描述
         """
-        if self.decision != None:
-            last_decision_description = self.des_json["basic_description"]["last_decision_description"].format(delta_time = current_decision_time - last_decision_time, decision = self.decision)
+        if self.decision != None and current_decision_time - last_decision_time < 5:
+            last_decision_description = self.des_json["basic_description"]["last_decision_description"]["basic"].format(delta_time = current_decision_time - last_decision_time, decision = self.decision)
+            # TODO: 增加在换道时候的描述
+            if self.decision == Behaviour.LCL or self.decision == Behaviour.LCR:
+                print("current lane is ", self.current_lane.id)
+                print("last lane is ", self.last_lane.id)
+                if self.last_lane.id != self.current_lane.id:
+                    last_decision_description += self.des_json["basic_description"]["last_decision_description"]["changed_lane"].format(direction = "right" if self.decision == Behaviour.LCR else "left")
+                else:
+                    last_decision_description += self.des_json["basic_description"]["last_decision_description"]["changing_lane"].format(direction = "right" if self.decision == Behaviour.LCR else "left")
+
             return last_decision_description
         else:
             return ""
@@ -225,7 +254,7 @@ class EnvScenario:
         Returns:
             List[int]: 可用的action序号
         """
-        if isinstance(self.current_lane, JunctionLane):
+        if isinstance(self.current_lane, JunctionLane) or (isinstance(self.current_lane, NormalLane) and self.ego_vehicle.current_state.s > self.current_lane.course_spline.s[-1] - 10):
             return [Behaviour.IDLE, Behaviour.AC, Behaviour.DC]
         else:
             return [Behaviour.IDLE, Behaviour.LCL, Behaviour.LCR, Behaviour.AC, Behaviour.DC]
@@ -256,29 +285,60 @@ class EnvScenario:
             str: 对AoI内的车辆进行描述
         """
         # 如果在normal lane上，只需要对AoI同方向的车辆进行描述; 如果在junction lane上，需要对所有AoI在junction上的车辆进行描述
+        # 对AOI区域内的车辆进行描述，只需要描述会发生碰撞的车辆+{如果在junction lane上，只需描述同个lane的车辆信息}+{如果在normal lane上，描述当前lane以及两边的车辆信息}
         svDescription = "There are other vehicles driving around you, and below is their basic information:\n"
         is_sv = False
-        # 这里需要在交叉路口前面一定距离的时候就切换到junction lane上，不过需要考虑增加新的一类describe
-        if isinstance(self.current_lane, NormalLane) and self.ego_vehicle.current_state.s < self.current_lane.course_spline.s[-1] - 10 :
+        # 这里需要在交叉路口前面一定距离的时候就同时考虑junction lane上的同方向车辆
+        if isinstance(self.current_lane, NormalLane):
             for sv in self.SV:
                 sv_lane = roadgraph.get_lane_by_id(sv.lane_id)
                 if isinstance(sv_lane, NormalLane) and sv_lane.affiliated_edge.id == self.current_lane.affiliated_edge.id:
+                    self.SV.remove(sv)
                     same_edge_sv = self.describeSVNormalLane(sv)
                     if same_edge_sv != "":
                         is_sv = True
                         svDescription += same_edge_sv
-        else:
+        
+        if isinstance(self.current_lane, JunctionLane):
+        # 描述同一个junction lane上的车辆
             for sv in self.SV:
-                # sv_lane = roadgraph.get_lane_by_id(sv.lane_id)
-                # if isinstance(sv_lane, JunctionLane):
+                if sv.lane_id == self.current_lane.id:
+                    self.SV.remove(sv)
+                    is_sv = True
+                    svDescription += self.describeSVNormalLane(sv)
+
+        # 描述下一个normal lane的车辆
+            next_lane = roadgraph.get_available_next_lane(self.current_lane.id, self.ego_vehicle.available_lanes)
+            if next_lane != None:
+                for sv in self.SV:
+                    if sv.lane_id == next_lane.id:
+                        self.SV.remove(sv)
+                        is_sv = True
+                        svDescription += self.describeSVNormalLane(sv, next_lane = True)
+
+        if isinstance(self.current_lane, NormalLane) and self.ego_vehicle.current_state.s > self.current_lane.course_spline.s[-1] - 10:
+        # 描述下一个junction lane上的车辆
+            next_lane = roadgraph.get_available_next_lane(self.current_lane.id, self.ego_vehicle.available_lanes)
+            if next_lane != None:
+                for sv in self.SV:
+                    if sv.lane_id == next_lane.id:
+                        self.SV.remove(sv)
+                        is_sv = True
+                        svDescription += self.describeSVNormalLane(sv, next_lane = True)
+
+        # 描述在AOI区域内可能发生碰撞的车辆
+        for sv in self.SV:
+            is_sv = True
+            collision_des = self.describeSVInAOI(sv, prediction.get(sv, None))
+            if collision_des != "":
+                svDescription += collision_des
                 is_sv = True
-                svDescription += self.describeSVJunctionLane(sv, prediction.get(sv, None))
 
         if not is_sv:
             svDescription = 'There are no other vehicles driving near you, so you can drive completely according to your own ideas.\n'
         return svDescription
     
-    def describeSVNormalLane(self, vehicle: Vehicle) -> str:
+    def describeSVNormalLane(self, vehicle: Vehicle, next_lane: bool = False) -> str:
         """当 ego 在 StraightLane 上时，车道信息是重要的，需要处理车道信息
         首先判断车辆和 ego 是否在同一条 lane 上行驶，如果是，那么只需要判断车辆和 ego 的相对位置
         如果不是，那么需要判断车辆和 ego 的相对位置，以及车辆和 ego 的 lane 的相对位置
@@ -290,20 +350,32 @@ class EnvScenario:
             str: 在normal lane上的车辆的描述
         """
         # TODO:考虑周围车辆可能的换道信息
-
-        if vehicle.lane_id == self.current_lane.id:
-            # 车辆和 ego 在同一条 lane 上行驶
+        # TODO:考虑normal lane很短，前面立马就是junction lane的情况，不能只考虑normal lane上的车
+        if next_lane:
             lane_relative_position = "same lane as you"
-        elif vehicle.lane_id == self.current_lane.left_lane():
-            # 车辆和 ego 在左侧 lane 上行驶
-            lane_relative_position = "lane to your left"
-        elif vehicle.lane_id == self.current_lane.right_lane():
-            # 车辆和 ego 在右侧 lane 上行驶
-            lane_relative_position = "lane to your right"
+            relative_position = "ahead"
+            distance = round(self.current_lane.spline_length - self.ego_vehicle.current_state.s + vehicle.current_state.s, 3)
+
         else:
-            return ''
-        relative_position = self.getSVRelativeState(vehicle)
+            if vehicle.lane_id == self.current_lane.id:
+                # 车辆和 ego 在同一条 lane 上行驶
+                lane_relative_position = "same lane as you"
+            elif vehicle.lane_id == self.current_lane.left_lane():
+                # 车辆和 ego 在左侧 lane 上行驶
+                lane_relative_position = "lane to your left"
+            elif vehicle.lane_id == self.current_lane.right_lane():
+                # 车辆和 ego 在右侧 lane 上行驶
+                lane_relative_position = "lane to your right"
+            else:
+                return ''
+        
+            relative_position = self.getSVRelativeState(vehicle)
+
+            distance = round(abs(vehicle.current_state.s - self.ego_vehicle.current_state.s), 3)
+
         sv_position = '('+ str(round(vehicle.current_state.x, 3)) + "," + str(round(vehicle.current_state.y, 3)) +')'
+
+            
         sv_normal_des = self.des_json["basic_description"]["surrond_vehicle_on_normal_description"].format(\
                                                                     sv_id = vehicle.id, \
                                                                     lane_relative_position = lane_relative_position, \
@@ -311,11 +383,12 @@ class EnvScenario:
                                                                     sv_speed = round(vehicle.current_state.vel, 3), \
                                                                     sv_acceleration = round(vehicle.current_state.acc, 3), \
                                                                     sv_lane_position = round(vehicle.current_state.s, 3), \
-                                                                    sv_position = sv_position)
+                                                                    sv_position = sv_position,\
+                                                                    distance = distance)
 
-        return sv_normal_des
+        return sv_normal_des + "\n"
 
-    def describeSVJunctionLane(self, vehicle: Vehicle, prediction_state: List[State]) -> str:
+    def describeSVInAOI(self, vehicle: Vehicle, prediction_state: List[State]) -> [str, bool]:
         """当进行交差路口的描述时，需要对信息进行相应转换
         首先判断未来轨迹是否会相交
         如果相交，则需要判断相交的时间和位置，计算出来给到llm
@@ -334,19 +407,17 @@ class EnvScenario:
             return ""
         else:
             [ego_time, ego_s, sv_time, sv_s] = self.trajectory_overlap(vehicle, self.ego_prediction, prediction_state)
-            sv_junction_des = self.des_json["basic_description"]["surrond_vehicle_on_junction_description"].format(sv_id = vehicle.id, \
-                                                                    col_state = "have no" if ego_s==None else 'have',\
-                                                                    sv_speed = round(vehicle.current_state.vel, 3), \
-                                                                    sv_acc = round(vehicle.current_state.acc))
-            
-            
             if ego_s != None:
-                sv_junction_des += self.des_json["basic_description"]["surrond_vehicle_collision_on_junction_description"].format(\
-                                                                ego_s = round(ego_s, 3), \
-                                                                sv_id = vehicle.id, \
-                                                                ego_time = round(ego_time, 3), \
-                                                                sv_s = round(sv_s, 3), \
-                                                                sv_time = round(sv_time, 3))
+                sv_junction_des = self.des_json["basic_description"]["surrond_vehicle_on_junction_description"].format(sv_id = vehicle.id, \
+                                                                    sv_speed = round(vehicle.current_state.vel, 3), \
+                                                                    sv_acc = round(vehicle.current_state.acc), \
+                                                                    ego_s = round(ego_s, 3), \
+                                                                    ego_time = round(ego_time, 3), \
+                                                                    sv_s = round(sv_s, 3), \
+                                                                    sv_time = round(sv_time, 3))
+            
+            else:
+                return ""
         
         return sv_junction_des + "\n"
 
@@ -385,10 +456,15 @@ class EnvScenario:
 
         if dis_statis.size != 0:
             ego_min_index, sv_min_index = dis_statis[0]
-            ego_s = ego_traj[ego_min_index].s - self.ego_vehicle.current_state.s
-            sv_s = sv_traj[sv_min_index].s - sv.current_state.s
-            ego_time = ego_traj[ego_min_index].t if ego_min_index != 0 else 0
-            sv_time = sv_traj[sv_min_index].t if sv_min_index != 0 else 0
+
+            # 如果在ego的第一个点和sv的第一个点就发生碰撞，说明是位于ego后面的车辆，不需要考虑
+            if ego_min_index == 0:
+                pass
+            else:
+                ego_s = ego_traj[ego_min_index].s - self.ego_vehicle.current_state.s
+                sv_s = sv_traj[sv_min_index].s - sv.current_state.s
+                ego_time = ego_traj[ego_min_index].t if ego_min_index != 0 else 0
+                sv_time = sv_traj[sv_min_index].t if sv_min_index != 0 else 0
 
             # self.logging.info("ego collide with sv at {}".format(ego_min_index, sv_min_index, ego_time, ego_s, sv_time, sv_s))
         
@@ -412,9 +488,9 @@ class EnvScenario:
                 self.ego_vehicle = vehicle
             if vehicle.vtype == VehicleType.IN_AOI:
                 self.SV.append(vehicle)
-        
-        # 获取上一次的decision
-        self.decision = self.ego_vehicle.behaviour
+
+        # 获取上一次的lane
+        self.last_lane = self.current_lane
 
         self.current_lane = roadgraph.get_lane_by_id(self.ego_vehicle.lane_id)
         self.ego_prediction = prediction.results.get(self.ego_vehicle, None)

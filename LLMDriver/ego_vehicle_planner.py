@@ -29,7 +29,7 @@ class LLMEgoPlanner(AbstractEgoPlanner):
              config,
              ego_decision: MultiDecision = None) -> Trajectory:
         
-        self.update_state(ego_veh, roadgraph)
+        # self.update_state(ego_veh, roadgraph)
 
         vehicle_id = ego_veh.id
         start = time.time()
@@ -96,8 +96,7 @@ class LLMEgoPlanner(AbstractEgoPlanner):
             )
         elif ego_veh.behaviour == Behaviour.LCR:
             # Turn Right
-            right_lane = roadgraph.get_lane_by_id(
-                current_lane.right_lane())
+            right_lane = roadgraph.get_lane_by_id(current_lane.right_lane())
             path = self.lanechange_trajectory_generator(
                 ego_veh,
                 right_lane,
@@ -130,13 +129,15 @@ class LLMEgoPlanner(AbstractEgoPlanner):
         
         # TODO: 加减速需要替换为对加速度的修改，而不是给定加速度进行计算
         if behaviour == Behaviour.AC:
-            target_s = current_state.s + current_state.s_d * course_t + 0.5*config["ACC_DEFAULT"] * (course_t**2)
-            target_state = State(s=target_s, s_d=current_state.s_d + config["ACC_DEFAULT"]*course_t, d=0)
+            target_acc = config["ACC_DEFAULT"]
+            target_s = current_state.s + current_state.vel * course_t + 0.5* target_acc * (course_t**2)
+            target_state = State(s=target_s, s_d=current_state.s_d + target_acc*course_t, d=0)
         elif behaviour == Behaviour.DC:
-            target_s = current_state.s + current_state.s_d * course_t - 0.5*config["ACC_DEFAULT"] * (course_t**2)
-            target_state = State(s=target_s, s_d=current_state.s_d - config["ACC_DEFAULT"]*course_t, d=0)
+            target_acc = -config["ACC_DEFAULT"]
+            target_s = current_state.s + current_state.vel * course_t + 0.5* target_acc * (course_t**2)
+            target_state = State(s=target_s, s_d=current_state.s_d + target_acc*course_t, d=0)
         elif behaviour == Behaviour.IDLE:
-            target_s = current_state.s + current_state.s_d * course_t
+            target_s = current_state.s + current_state.vel * course_t
             target_state = State(s=target_s, s_d=current_state.s_d, d=0)
 
         path = frenet_optimal_planner.calc_spec_path(current_state,

@@ -9,8 +9,9 @@ from langchain.callbacks import get_openai_callback
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from LLMDriver.loadConfig import load_openai_config
 import logger, logging
+from LLMDriver.vectorStore import DrivingMemory
 
-
+USE_MEMORY = True
 delimiter = "####"
 example_message = textwrap.dedent(f"""\
         {delimiter} Driving scenario description:
@@ -75,10 +76,33 @@ class DriverAgent:
                 max_tokens=2000,
                 request_timeout=60,
             )
+        db_path = os.path.dirname(os.path.abspath(__file__)) + "/db/" + "chroma_5_shot_20_mem/"
+        self.agent_memory = DrivingMemory(db_path=db_path)
+        self.few_shot_num = 3
 
-    # TODO: 加入few_shot
-    def few_shot_decision(self, scenario_description: str = "Not available", available_actions: str = "Not available", driving_intensions: str = "Not available", fewshot_messages: List[str] = None, fewshot_answers: List[str] = None):
+    def few_shot_decision(self, scenario_description: str = "Not available", available_actions: str = "Not available", driving_intensions: str = "Not available"):
         # for template usage refer to: https://python.langchain.com/docs/modules/model_io/prompts/prompt_templates/
+
+        if USE_MEMORY:
+            # 处理从memory中获取的结果
+            fewshot_results = self.agent_memory.retriveMemory(
+                scenario_description, self.few_shot_num)
+            fewshot_messages = []
+            fewshot_answers = []
+            fewshot_actions = []
+            for fewshot_result in fewshot_results:
+                # print(fewshot_result)
+                fewshot_messages.append(fewshot_result["human_question"])
+                fewshot_answers.append(fewshot_result["LLM_response"])
+                fewshot_actions.append(fewshot_result["action"])
+                mode_action = max(
+                    set(fewshot_actions), key=fewshot_actions.count)
+                mode_action_count = fewshot_actions.count(mode_action)
+            if len(fewshot_actions) == 0:
+                print("fewshot_actions ERRORS!: ", fewshot_actions)
+                exit(1)
+            # print("few shot results: /n", fewshot_results)
+            # print("fewshot_actions: ", fewshot_actions)
 
         system_message = textwrap.dedent(f"""\
         You are ChatGPT, a large language model trained by OpenAI. Now you act as a mature driving assistant, who can give accurate and correct advice for human driver in complex urban driving scenarios.
@@ -108,20 +132,20 @@ class DriverAgent:
         """
         human_message = human_message.replace("        ", "")
 
-        # if fewshot_messages is None:
-        #     raise ValueError("fewshot_message is None")
+        if fewshot_messages is None:
+            raise ValueError("fewshot_message is None")
         messages = [
             SystemMessage(content=system_message),
             HumanMessage(content=example_message),
             AIMessage(content=example_answer),
         ]
-        # for i in range(len(fewshot_messages)):
-        #     messages.append(
-        #         HumanMessage(content=fewshot_messages[i])
-        #     )
-        #     messages.append(
-        #         AIMessage(content=fewshot_answers[i])
-        #     )
+        for i in range(len(fewshot_messages)):
+            messages.append(
+                HumanMessage(content=fewshot_messages[i])
+            )
+            messages.append(
+                AIMessage(content=fewshot_answers[i])
+            )
         messages.append(
             HumanMessage(content=human_message)
         )
@@ -136,7 +160,7 @@ class DriverAgent:
         decision_action = response.content.split(delimiter)[-1]
         try:
             result = int(decision_action)
-            if result < 0 or result > 4:
+            if result not in [1, 2, 3, 4, 8]:
                 raise ValueError
         except ValueError:
             print("Output is not a int number, checking the output...")
