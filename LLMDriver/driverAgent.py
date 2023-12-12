@@ -11,6 +11,8 @@ from LLMDriver.loadConfig import load_openai_config
 import logger, logging
 from LLMDriver.vectorStore import DrivingMemory
 
+from LLMDriver.promptDB import DBBridge
+
 USE_MEMORY = True
 delimiter = "####"
 example_message = textwrap.dedent(f"""\
@@ -50,7 +52,6 @@ class DriverAgent:
         self, 
         temperature: float = 0
     ) -> None:
-        # 初始化
         load_openai_config()
         self.logger = logger.setup_app_level_logger(logger_name="DriverAgent", file_name="llm_driver.log")
         self.logging = logging.getLogger("DriverAgent").getChild(__name__)
@@ -80,18 +81,20 @@ class DriverAgent:
         self.agent_memory = DrivingMemory(db_path=db_path)
         self.few_shot_num = 3
 
-    def few_shot_decision(self, scenario_description: str = "Not available", available_actions: str = "Not available", driving_intensions: str = "Not available"):
+        self.database = "egoTrackingTest.db"
+        self.dbBridge = DBBridge(self.database)
+        self.dbBridge.createTable()
+
+    def few_shot_decision(self, scenario_description: str = "Not available", available_actions: str = "Not available", driving_intensions: str = "Not available", time_step: float = 0.0):
         # for template usage refer to: https://python.langchain.com/docs/modules/model_io/prompts/prompt_templates/
 
         if USE_MEMORY:
-            # 处理从memory中获取的结果
             fewshot_results = self.agent_memory.retriveMemory(
                 scenario_description, self.few_shot_num)
             fewshot_messages = []
             fewshot_answers = []
             fewshot_actions = []
             for fewshot_result in fewshot_results:
-                # print(fewshot_result)
                 fewshot_messages.append(fewshot_result["human_question"])
                 fewshot_answers.append(fewshot_result["LLM_response"])
                 fewshot_actions.append(fewshot_result["action"])
@@ -101,8 +104,6 @@ class DriverAgent:
             if len(fewshot_actions) == 0:
                 print("fewshot_actions ERRORS!: ", fewshot_actions)
                 exit(1)
-            # print("few shot results: /n", fewshot_results)
-            # print("fewshot_actions: ", fewshot_actions)
 
         system_message = textwrap.dedent(f"""\
         You are ChatGPT, a large language model trained by OpenAI. Now you act as a mature driving assistant, who can give accurate and correct advice for human driver in complex urban driving scenarios.
@@ -118,7 +119,7 @@ class DriverAgent:
         """)
 
         human_message = f"""\
-        Above messages are some examples of how you make a decision successfully in the past. Those scenarios are similar to the current scenario. You should refer to those examples to make a decision for the current scenario. P.S. Be careful of examples which decision is change lanes, since change lanes is not a frequent action, you think twice and reconfirm before you change lanes.
+        Above messages are some examples of how you make a decision successfully in the past. Those scenarios are similar to the current scenario. You should refer to those examples to make a decision for the current scenario. P.S. Be careful of examples which decision is change lanes, since change lanes is not a frequent action.
 
         Here is the current scenario:
         {delimiter} Driving scenario description:
@@ -149,21 +150,20 @@ class DriverAgent:
         messages.append(
             HumanMessage(content=human_message)
         )
-        # print("fewshot number:", (len(messages) - 2)/2)
+
         start_time = time.time()
-        # with get_openai_callback() as cb:
-        self.logging.debug(messages)
+
         response = self.llm(messages)
+
         print("Time used: ", time.time() - start_time)
-        # print(cb)
-        self.logging.info(response.content)
+
         decision_action = response.content.split(delimiter)[-1]
         try:
             result = int(decision_action)
             if result not in [1, 2, 3, 4, 8]:
                 raise ValueError
         except ValueError:
-            print("Output is not a int number, checking the output...")
+            print("Output is not available, checking the output...")
             check_message = f"""
             You are a output checking assistant who is responsible for checking the output of another agent.
             
@@ -191,8 +191,12 @@ class DriverAgent:
             result = int(check_response.content.split(delimiter)[-1])
 
         few_shot_answers_store = ""
-        # for i in range(len(fewshot_messages)):
-        #     few_shot_answers_store += fewshot_answers[i] + \
-        #         "\n---------------\n"
+        for i in range(len(fewshot_messages)):
+            few_shot_answers_store += fewshot_answers[i] + \
+                "\n---------------\n"
         print("Result:", result)
+        self.logging.info("====================== time step {} ======================".format(time_step))
+        self.logging.info("---------------------- scenario description ---------------------\n {} \n {} ".format(scenario_description, available_actions))
+        self.logging.debug("---------------------- LLM response ---------------------\n {}".format(response.content))
+        self.logging.debug("result: {}".format(result))
         return result, response.content, human_message, few_shot_answers_store

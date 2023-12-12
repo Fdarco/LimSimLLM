@@ -157,24 +157,6 @@ class TrafficManager:
             if ego_id is None:
                 raise ValueError("Ego car is not found when EGO_PLANER is used.")
 
-        # an example of ego llm decision
-        if self.config["USE_LLM"]:
-            # 场景描述
-            if T - self.last_decision_time >= self.config["DECISION_TIME"]:
-                env_describe = self.env_scenario.describe(observation, roadgraph, prediction, T, self.last_decision_time)
-                self.last_decision_time = T
-                # openai进行交互，得到决策结果
-                action, response, human_question, fewshot_answer = self.llm_driver.few_shot_decision(env_describe[0], env_describe[1], env_describe[2])
-                vehicles[ego_id].behaviour = Behaviour(action)
-                # 更新决策结果
-                self.env_scenario.decision = vehicles[ego_id].behaviour
-                # if vehicle.current_state.vel < 10.0:
-                #     vehicle.behaviour = Behaviour.AC
-                # else:
-                #     vehicle.behaviour = Behaviour.DC
-            else:
-                vehicles[ego_id].behaviour = self.env_scenario.decision
-
         ego_decision: EgoDecision = None
         if self.config["USE_DECISION_MAKER"] and T - self.last_decision_time >= self.config["DECISION_INTERVAL"]:
             if self.config["EGO_PLANNER"]:
@@ -190,11 +172,37 @@ class TrafficManager:
                                                    T=T, config=self.config)
 
         # an example of ego planner
-        if self.config["EGO_PLANNER"]:
+        if self.config["EGO_PLANNER"] and not self.config["USE_LLM"]:
             ego_path = self.ego_planner.plan(vehicles[ego_id], observation,
                                              roadgraph, prediction, T,
                                              self.config, ego_decision)
             result_paths[ego_id] = ego_path
+
+        # an example of ego llm decision
+        if self.config["USE_LLM"]:
+            # scenario describe
+            if T - self.last_decision_time >= self.config["DECISION_TIME"]:
+                env_describe = self.env_scenario.describe(observation, roadgraph, prediction, T, self.last_decision_time)
+                self.last_decision_time = T
+                # decision process
+                action, response, human_question, fewshot_answer = self.llm_driver.few_shot_decision(env_describe[0], env_describe[1], env_describe[2], T)
+                if action not in [1, 2, 3, 4, 8]:
+                    action = 8
+                    result = False
+                else:
+                    result = True
+                self.llm_driver.dbBridge.insertPrompts(T, ego_id, result, human_question, fewshot_answer, response)
+                vehicles[ego_id].behaviour = Behaviour(action)
+                # update decision
+                self.env_scenario.decision = vehicles[ego_id].behaviour
+                # planner
+                ego_path = self.ego_planner.plan(vehicles[ego_id], observation,
+                                             roadgraph, prediction, T,
+                                             self.config)
+                result_paths[ego_id] = ego_path
+            else:
+                vehicles[ego_id].behaviour = self.env_scenario.decision
+                result_paths[ego_id] = self.lastseen_vehicles[ego_id].trajectory
 
         # Update Last Seen
         output_trajectories = {}

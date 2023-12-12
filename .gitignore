@@ -184,4 +184,5 @@ report/
 
 history_data
 db
-save_data.sh
+*.sh
+LLMDriver/config.yaml

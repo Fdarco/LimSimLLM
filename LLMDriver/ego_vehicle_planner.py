@@ -2,12 +2,10 @@ import time
 
 from trafficManager.common.observation import Observation
 from trafficManager.common.vehicle import Behaviour, Vehicle
-from trafficManager.decision_maker.abstract_decision_maker import EgoDecision, MultiDecision
 from trafficManager.planner.abstract_planner import AbstractEgoPlanner
 from trafficManager.predictor.abstract_predictor import Prediction
 
 import logger
-import trafficManager.planner.trajectory_generator as traj_generator
 from utils.obstacles import DynamicObstacle, ObsType, Rectangle
 from utils.roadgraph import JunctionLane, NormalLane, RoadGraph, AbstractLane
 from utils.trajectory import State, Trajectory
@@ -26,10 +24,7 @@ class LLMEgoPlanner(AbstractEgoPlanner):
              roadgraph: RoadGraph,
              prediction: Prediction,
              T,
-             config,
-             ego_decision: MultiDecision = None) -> Trajectory:
-        
-        # self.update_state(ego_veh, roadgraph)
+             config) -> Trajectory:
 
         vehicle_id = ego_veh.id
         start = time.time()
@@ -127,13 +122,22 @@ class LLMEgoPlanner(AbstractEgoPlanner):
         dt = config["DT"]  # time tick
         current_state = vehicle.current_state
         
-        # TODO: 加减速需要替换为对加速度的修改，而不是给定加速度进行计算
         if behaviour == Behaviour.AC:
-            target_acc = config["ACC_DEFAULT"]
+            if current_state.acc < 0:
+                target_acc = config["ACC_DEFAULT"]
+            else:
+                target_acc = current_state.acc + config["ACC_DEFAULT"]
+            if target_acc > config["ACC_MAX"]:
+                target_acc = config["ACC_MAX"]
             target_s = current_state.s + current_state.vel * course_t + 0.5* target_acc * (course_t**2)
             target_state = State(s=target_s, s_d=current_state.s_d + target_acc*course_t, d=0)
         elif behaviour == Behaviour.DC:
-            target_acc = -config["ACC_DEFAULT"]
+            if current_state.acc > 0:
+                target_acc = -config["ACC_DEFAULT"]
+            else:
+                target_acc = current_state.acc -config["ACC_DEFAULT"]
+            if target_acc < config["ACC_MIN"]:
+                target_acc = config["ACC_MIN"]
             target_s = current_state.s + current_state.vel * course_t + 0.5* target_acc * (course_t**2)
             target_state = State(s=target_s, s_d=current_state.s_d + target_acc*course_t, d=0)
         elif behaviour == Behaviour.IDLE:

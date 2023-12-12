@@ -67,3 +67,5 @@ USE_LLM: True # whether use LLM
 ACC_DEFAULT: 0.5 # acceleration [m/s^2]
 DESCRIBE_JSON: "LLMDriver/prompt_template.json" # describe json file
 DECISION_TIME: 1.0 # decision time [s]
+ACC_MAX: 3.0 # max acceleration [m/s^2]
+ACC_MIN: -5.0 # min acceleration [m/s^2]

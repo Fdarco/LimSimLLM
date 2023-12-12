@@ -313,27 +313,60 @@ class ReplayModel:
                         fill=(243, 156, 18, 60),
                         parent=mvNode)
 
+        # TODO: 修改，输出LLM对应的帧数以及决策结果
         infoNode = dpg.add_draw_node(parent='simInfo')
-        dpg.draw_text((5, 5),
-                      f'Replay {self.dataBase}',
-                      color=(75, 207, 250),
-                      size=20,
-                      parent=infoNode)
-        dpg.draw_text((5, 25),
-                      'Time step: %.2f s.' % (self.timeStep / 10),
-                      color=(85, 230, 193),
-                      size=20,
-                      parent=infoNode)
-        dpg.draw_text((5, 45),
+        conn = sqlite3.connect(self.dataBase)
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT done, description, thoughtsAndAction FROM promptsINFO
+            WHERE timeStep <= "{}";""".format(
+                self.timeStep / 10
+            )
+        )
+        promptData = cur.fetchall()
+        if promptData:
+            done, description, thoughtsAndAction = promptData[-1]
+            if done:
+                result = thoughtsAndAction.split("####")[-1]
+            else:
+                result = "Wrong Output"
+        
+            dpg.draw_text((5, 5),
+                        f'LLM Decision is {result}',
+                        color=(75, 207, 250),
+                        size=20,
+                        parent=infoNode)
+            dpg.draw_text((5, 25),
+                        'Time step: %.2f s.' % (self.timeStep / 10),
+                        color=(85, 230, 193),
+                        size=20,
+                        parent=infoNode)
+            dpg.draw_text((5, 45),
+                        'Decision process: {}'.format(thoughtsAndAction),
+                        color=(249, 202, 36),
+                        size=20,
+                        parent=infoNode)
+        else:
+            dpg.draw_text((5, 5),
+                        'Time step: %.2f s.' % (self.timeStep / 10),
+                        color=(85, 230, 193),
+                        size=20,
+                        parent=infoNode)
+            dpg.draw_text((5, 25),
+                        'No LLM Decision',
+                        color=(75, 207, 250),
+                        size=20,
+                        parent=infoNode)
+            dpg.draw_text((5, 45),
                       'Current lane: %s' % self.ego.laneID,
                       color=(249, 202, 36),
                       size=20,
                       parent=infoNode)
-        dpg.draw_text((5, 65),
-                      'Lane position: %.5f' % self.ego.lanePos,
-                      color=(249, 202, 36),
-                      size=20,
-                      parent=infoNode)
+            dpg.draw_text((5, 65),
+                        'Lane position: %.5f' % self.ego.lanePos,
+                        color=(249, 202, 36),
+                        size=20,
+                        parent=infoNode)
 
         radarNode = dpg.add_draw_node(parent='radarPlot')
 

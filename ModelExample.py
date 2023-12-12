@@ -7,8 +7,7 @@ import argparse
 log = logger.setup_app_level_logger(file_name="app_debug.log")
 
 parser = argparse.ArgumentParser(description='input environment')
-#type是要传入的参数的数据类型  help是该参数的提示信息
-parser.add_argument('env', type=str, help='environment name', default='roundabout', choices=['corridor', 'CarlaTown05', 'CarlaTown06', 'bigInter', 'roundabout', 'bilbao', 'freewayB', 'Expressway_A'])
+parser.add_argument('--env', type=str, help='environment name', default='roundabout', choices=['corridor', 'CarlaTown05', 'CarlaTown06', 'bigInter', 'roundabout', 'bilbao', 'freewayB', 'Expressway_A'])
 
 args = parser.parse_args()
 
