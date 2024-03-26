@@ -521,7 +521,8 @@ class XML2JSON:
 
 
 if __name__ == "__main__":
-    networkFile = '/home/PJLAB/leiwenjie/2024-03-25-16-43-58/osm.net.xml'
-    xml2json = XML2JSON(networkFile)
+    root_dir = "networkFiles/CarlaTown05/"
+    networkFile = 'Town05.net.xml'
+    xml2json = XML2JSON(root_dir+networkFile)
     xml2json.get_data()
-    xml2json.save_json('shanghai.json')
+    xml2json.save_json(root_dir+'town05.json')
