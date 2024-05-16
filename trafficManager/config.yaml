@@ -7,7 +7,7 @@ USE_DECISION_MAKER: False # whether use decision maker results in planning modul
 MAX_ROAD_WIDTH: 3.5 # [DEPRECATED]: maximum road width [m]
 D_ROAD_W: 0.75 # road width sampling length [m]
 MAX_T: 8.0 # max prediction time [m]mcts
-MIN_T: 5.0 # min prediction time [m]
+MIN_T: 5.0 # min prediction time [s]
 DT: 0.1 # time tick [s]
 D_T_S: 2.5 # target longtitude vel sampling length [km/h]
 N_D_S_SAMPLE: 2 # sampling number of target longtitude vel
