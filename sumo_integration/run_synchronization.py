@@ -118,26 +118,26 @@ class SimulationSynchronization(object):
         self.cameraInfo = {
             'CAM_FRONT': {
                 'transform': carla.Transform(
-                    carla.Location(x=1.5, y=0, z=2),
+                    carla.Location(x=1.5, y=0, z=1.5),
                     carla.Rotation(yaw=0, pitch=0, roll=0)
                 ),
-                'fov': '70',
+                'fov': '120',
                 'record': self.CAM_FONRT_RECORD,
             },
             'CAM_FRONT_RIGHT': {
                 'transform': carla.Transform(
-                    carla.Location(x=1.5, y=0.7, z=2),
-                    carla.Rotation(yaw=55, pitch=0, roll=0)
+                    carla.Location(x=1.5, y=0.7, z=1.5),
+                    carla.Rotation(yaw=90, pitch=0, roll=0)
                 ),
-                'fov': '70',
+                'fov': '90',
                 'record': self.CAM_FRONT_RIGHT_RECORD
             },
             'CAM_FRONT_LEFT': {
                 'transform': carla.Transform(
-                    carla.Location(x=1.5, y=-0.7, z=2),
-                    carla.Rotation(yaw=-55, pitch=0, roll=0)
+                    carla.Location(x=1.5, y=-0.7, z=1.5),
+                    carla.Rotation(yaw=-90, pitch=0, roll=0)
                 ),
-                'fov': '70',
+                'fov': '90',
                 'record': self.CAM_FRONT_LEFT_RECORD
             },
             'CAM_BACK_LEFT': {
