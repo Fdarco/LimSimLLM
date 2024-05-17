@@ -135,6 +135,7 @@ try:
                 ego_veh.lane_id, ego_veh.cur_wp = roadgraph.get_laneID_by_xy(ego_veh.state.x, ego_veh.state.y, carla_map)
                 ego_veh.state.s, _ = roadgraph.get_lane_by_id(ego_veh.lane_id).course_spline.cartesian_to_frenet1D(ego_veh.state.x, ego_veh.state.y)
 
+            # ------------- planning ------------ #
             ego_veh.next_available_lanes = ego_veh.get_available_lanes(roadgraph)
             ego_veh.trajectory = planner.plan(ego_veh, roadgraph, None, t)
             print(ego_veh.lane_id)

@@ -14,6 +14,7 @@
 ### TODO List
 1. 从carla.actor中获取traffic light信息以及周围的交通参与者(actor)信息
 2. 封装函数获取他车的信息流
+3. 油门控制
 
 ### Thought List
 1. 在waypoint的left_lane_marking和right_lane_marking中，说明了该车道两边的道路线标志，或许对于高级语义信息的理解有帮助。
