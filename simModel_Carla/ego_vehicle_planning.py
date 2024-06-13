@@ -14,6 +14,7 @@ from simInfo.CustomExceptions import NoPathFoundError
 
 import numpy as np
 import math
+import os
 
 from trafficManager.planner.frenet_optimal_planner import frenet_optimal_planner
 from trafficManager.common import cost
@@ -30,9 +31,12 @@ def load_config(config_file_path: str) -> dict:
     Returns:
         dict: The configuration dictionary.
     """
-    with open(config_file_path, "r", encoding="utf-8") as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-
+    try:
+        with open(config_file_path, "r", encoding="utf-8") as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+    except FileNotFoundError:
+        with open(os.path.join('..',config_file_path),"r", encoding="utf-8") as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
     return config
 
 decision_logger = logger.setup_app_level_logger(logger_name="ego_planner", file_name="llm_decision.log")

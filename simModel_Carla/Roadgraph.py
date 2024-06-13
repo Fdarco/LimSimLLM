@@ -118,6 +118,7 @@ class RoadGraph:
             cur_edge = self.Edges[route[i]]
             junction_lanes = [self.Junction_Dict[id] for id in cur_edge.next_edge_connect[route[i+1]]]
             # 取出最后一个section
+            #TODO:last_section should be used as section_list[-1]
             last_section = self.Sections[cur_edge.section_list[0]]
             
             ## 找到与next_edge之间的junction相连的lane作为change lane

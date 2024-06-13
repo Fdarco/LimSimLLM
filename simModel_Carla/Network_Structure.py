@@ -178,6 +178,7 @@ class JunctionLane(AbstractLane):
         for wp in self.start_wp.previous(RESOLUTION):
             if not wp.is_intersection:
                 return (wp.road_id, wp.section_id, wp.lane_id)
+        #TODO: key error bug in Town 04
         return None
 
     @cached_property

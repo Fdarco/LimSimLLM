@@ -205,8 +205,10 @@ class RoadInfoGet:
             last_wp = cur_wp
 
         lane.wp_list = wp_in_line_list[::-1]
-        lane.get_spline2D()
 
+        #In case of the lane that only has one wp
+        if len(lane.wp_list)>1:
+            lane.get_spline2D()
         return lane, new_wp
 
     def get_connect(self):
