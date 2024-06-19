@@ -109,7 +109,7 @@ class Model:
                 self.tpStart = 1
 
     def getSce(self):
-        if self.ego.arrive_destination():
+        if not self.ego.arrive_destination():
             self.tpStart = 1
             self.updateSurroundVeh()#更新AOI
 
@@ -134,12 +134,11 @@ class Model:
         vehicle.state.s = max(0, vehicle.state.s)
 
         # ------------ update lane_id and cur_wp ------------ #
-        # TODO:漏掉了同一edge不同section的情况？此外当进入edge时，被覆写的情况会出现，即lane_id最后还是靠后面的代码给的，会不会有问题？
         if vehicle.state.s > cur_lane.length:
             if vehicle.cur_wp.is_junction:
                 # 说明从junction进入edge，这个时候有可能有重叠的waypoint, 先按照上一个lane给出的next_junction作为id
                 next_normal_lane = self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[cur_lane.next_lane])
-                vehicle.lane_id, vehicle.cur_wp = vehicle.get_laneID_by_s(next_normal_lane.start_wp.road_id,
+                vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(next_normal_lane.start_wp.road_id,
                                                                             next_normal_lane.start_wp.lane_id,
                                                                             vehicle.state.s - cur_lane.length,
                                                                             self.carla_map)
@@ -149,7 +148,7 @@ class Model:
                     cur_lane = copy.deepcopy(next_normal_lane)
                     if next_normal_lane.next_lane:
                         next_normal_lane = self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[next_normal_lane.next_lane])
-                        vehicle.lane_id, vehicle.cur_wp = vehicle.get_laneID_by_s(next_normal_lane.start_wp.road_id,
+                        vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(next_normal_lane.start_wp.road_id,
                                                                                     next_normal_lane.start_wp.lane_id,
                                                                                     vehicle.state.s - cur_lane.length,
                                                                                     self.carla_map)
@@ -174,17 +173,17 @@ class Model:
                     # 找到cur_lane对应的junction_lane
                     if self.roadgraph.WP2Lane[junction_lane.previous_lane] == vehicle.lane_id:
                         vehicle.lane_id = junction_lane.id
-                        vehicle.lane_id, vehicle.cur_wp = vehicle.get_laneID_by_s(junction_lane.start_wp.road_id,
+                        vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(junction_lane.start_wp.road_id,
                                                                                     junction_lane.start_wp.lane_id,
                                                                                     vehicle.state.s - cur_lane.length,
                                                                                     self.carla_map)
-                        vehicle.state.s, _ = vehicle.get_lane_by_id(
+                        vehicle.state.s, _ = self.roadgraph.get_lane_by_id(
                             vehicle.lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
                         vehicle.state.s = max(0, vehicle.state.s)
                         break
 
         if vehicle.cur_wp.is_junction:
-            vehicle.lane_id, vehicle.cur_wp = vehicle.get_laneID_by_s(vehicle.cur_wp.road_id, vehicle.cur_wp.lane_id,
+            vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(vehicle.cur_wp.road_id, vehicle.cur_wp.lane_id,
                                                                         vehicle.state.s, self.carla_map)
             vehicle.state.s, _ = self.roadgraph.get_lane_by_id(vehicle.lane_id).course_spline.cartesian_to_frenet1D(
                 vehicle.state.x, vehicle.state.y)
