@@ -206,9 +206,23 @@ class RoadInfoGet:
 
         lane.wp_list = wp_in_line_list[::-1]
 
-        #In case of the lane that only has one wp
+        
         if len(lane.wp_list)>1:
             lane.get_spline2D()
+        else:
+            #In case of the lane that only has one wp,choose smaller Resolution to go over again
+            test=lane.wp_list[-1].next_until_lane_end(RESOLUTION/5)
+            end_wp=test[-1]
+            cp=end_wp.previous(RESOLUTION/5)[0]
+            tmp_wp_list=[end_wp]
+            while cp.road_id==end_wp.road_id and cp.section_id==end_wp.section_id:
+                tmp_wp_list.append(cp)
+                cp=cp.previous(RESOLUTION/5)[0]
+            lane.wp_list = tmp_wp_list[::-1]
+            assert len(lane.wp_list)>1
+
+            lane.get_spline2D()
+            print('debuging')
         return lane, new_wp
 
     def get_connect(self):
@@ -264,7 +278,9 @@ class RoadInfoGet:
                     edge_id = self.road_id_to_edge[str(last_wp.road_id) + '_' + str(last_wp.section_id) + '_' + str(last_wp.lane_id)]
                     junction_lane.incoming_edge_id = edge_id
                     break
-
+            if type(junction_lane.outgoing_edge_id)==int or junction_lane.incoming_edge_id==int:
+                #current code does not consider the case where one junction is connected directly to another junction
+                return
             junction_lane.id = junction_lane.incoming_edge_id + '-' + junction_lane.outgoing_edge_id + '-' + str(i)
 
             # 增加edge的connect信息
@@ -304,8 +320,8 @@ if __name__ == '__main__':
 
     # -------------------- test ------------------- #
     spawn_points = carla_map.get_spawn_points() # 选出适合放置车辆的位置
-    origin = carla.Location(spawn_points[100].location)
-    destination = carla.Location(spawn_points[87].location)  
+    origin = carla.Location(spawn_points[20].location)
+    destination = carla.Location(spawn_points[100].location)  
 
     grp = GlobalRoutePlanner(carla_map, 0.5)
     route = grp.trace_route(origin, destination)
@@ -325,7 +341,7 @@ if __name__ == '__main__':
                 #     continue
                 world.debug.draw_line(lane.wp_list[0].transform.location, lane.wp_list[-1].transform.location, color=carla.Color(r=0, g=255, b=0), thickness=1.0, life_time=100)
         for junction_lane in available_lanes['junction_lane']:
-            world.debug.draw_line(junction_lane.start_wp.transform.location, junction_lane.end_wp.transform.location, color=carla.Color(r=0, g=0, b=255), thickness=1.0, life_time=100)
+            world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=0, g=0, b=255), thickness=1.0, life_time=100)
         for section_id, lanes in available_lanes['change_lane'].items():
             for lane in lanes:
                 world.debug.draw_line(lane.wp_list[0].transform.location, lane.wp_list[-1].transform.location, color=carla.Color(r=255, g=0, b=0), thickness=1.0, life_time=100)

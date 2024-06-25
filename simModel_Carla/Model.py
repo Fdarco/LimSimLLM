@@ -183,8 +183,14 @@ class Model:
                         break
 
         if vehicle.cur_wp.is_junction:
-            vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(vehicle.cur_wp.road_id, vehicle.cur_wp.lane_id,
-                                                                        vehicle.state.s, self.carla_map)
+            # lane_id,cur_wp=self.roadgraph.get_laneID_by_s(vehicle.cur_wp.road_id, vehicle.cur_wp.lane_id,
+            #                                                             vehicle.state.s, self.carla_map)
+            lane_id=vehicle.lane_id
+            lane_id_by_carla,cur_wp=self.roadgraph.get_laneID_by_xy(vehicle.state.x, vehicle.state.y, self.carla_map)
+            if not cur_wp.is_junction:
+                lane_id=lane_id_by_carla
+            vehicle.lane_id,vehicle.cur_wp=lane_id,cur_wp
+
             vehicle.state.s, _ = self.roadgraph.get_lane_by_id(vehicle.lane_id).course_spline.cartesian_to_frenet1D(
                 vehicle.state.x, vehicle.state.y)
         else:

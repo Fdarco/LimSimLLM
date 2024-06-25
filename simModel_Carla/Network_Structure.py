@@ -79,7 +79,10 @@ class AbstractLane(ABC):
 
     @cached_property
     def length(self):
-        return self.course_spline.s[-1]
+        if self.course_spline:
+            return self.course_spline.s[-1]
+        else:
+            return 0
 
     @cached_property
     def start_wp(self):
@@ -93,6 +96,12 @@ class AbstractLane(ABC):
         """根据wp_list构建spline2D
         """
         xy_list = list(map(lambda wp: [wp.transform.location.x, wp.transform.location.y], self.wp_list))
+
+        #To avoid waypoint overlap,remove same last two wp
+        while len(xy_list) >= 2 and xy_list[-1]==xy_list[-2]:
+            xy_list.pop(-2)
+            self.wp_list.pop(-2)
+            
         xy_unzip = list(zip(*xy_list))
         self.course_spline = Spline2D(xy_unzip[0], xy_unzip[1])
     

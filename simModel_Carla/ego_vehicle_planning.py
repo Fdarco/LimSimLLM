@@ -145,11 +145,9 @@ class LLMEgoPlanner:
                 next_lane = roadgraph.get_lane_by_id(next_lane_id)
 
         # 防止lane过短，导致规划不出来
-        lanes = [current_lane, next_lane] if next_lane != None else [
-            current_lane]
         if next_lane != None:
             lanes = [current_lane, next_lane]
-            if current_lane.length - ego_veh.state.s + next_lane.length < 20:
+            if current_lane.length - ego_veh.state.s + next_lane.length < 20:#why 20?
                 # 找下一个lane
                 next_lane = ego_veh.get_available_next_lane(
                     roadgraph, next_lane.id)
