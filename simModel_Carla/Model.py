@@ -145,7 +145,7 @@ class Model:
                 while (vehicle.lane_id == None):
                     # 说明这个长度已经超过了下一个lane了
                     vehicle.state.s = vehicle.state.s - cur_lane.length
-                    cur_lane = copy.deepcopy(next_normal_lane)
+                    cur_lane = next_normal_lane
                     if next_normal_lane.next_lane:
                         next_normal_lane = self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[next_normal_lane.next_lane])
                         vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(next_normal_lane.start_wp.road_id,
@@ -173,10 +173,7 @@ class Model:
                     # 找到cur_lane对应的junction_lane
                     if self.roadgraph.WP2Lane[junction_lane.previous_lane] == vehicle.lane_id:
                         vehicle.lane_id = junction_lane.id
-                        vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(junction_lane.start_wp.road_id,
-                                                                                    junction_lane.start_wp.lane_id,
-                                                                                    vehicle.state.s - cur_lane.length,
-                                                                                    self.carla_map)
+                        vehicle.cur_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,vehicle.state.s - cur_lane.length)
                         vehicle.state.s, _ = self.roadgraph.get_lane_by_id(
                             vehicle.lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
                         vehicle.state.s = max(0, vehicle.state.s)
@@ -244,6 +241,9 @@ if __name__=='__main__':
             model.ego.trajectory = planner.plan(model.ego, model.roadgraph, None, model.timeStep)
             print(model.ego.lane_id)
             print(model.ego.behaviour)
+            world=model.world
+            for state in model.ego.trajectory.states:
+                world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
 
         model.updateVeh()
 
