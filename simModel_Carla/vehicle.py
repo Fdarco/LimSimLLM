@@ -7,17 +7,18 @@ from collections import deque
 from utils.trajectory import State, Trajectory
 from typing import List, Set
 from trafficManager.common.coord_conversion import cartesian_to_frenet2D
+from agents.navigation.global_route_planner import GlobalRoutePlanner
+
 
 # 每个vehicle自行维护自己的路线信息
 class Vehicle:
-    def __init__(self, 
-                 vehicle_id: int,
-                 route: list,
+    def __init__(self,
+                 actor:carla.Actor,
                  start_waypoint: carla.Waypoint,
                  end_waypoint: carla.Waypoint,
                  visible_distance: int = 100,
-                 init_state: State = State(),
-                 lane_id: str = None):
+                 route: list = [],
+                 ):
         """Vehicle class for carla-only simulation
 
         Args:
@@ -27,23 +28,35 @@ class Vehicle:
             init_state (State, optional): the vehicle's init state. Defaults to State().
             lane_id (str, optional): the vehicle's init lane id. Defaults to None.
         """
-        self.id = vehicle_id
-        self.route = route # edge_id
-        self.available_lanes = dict() # all of the available lanes in the route.
-                                    # edge_id -> {"available_lane": {lane_id: lane, ...}, "change_lane": {lane_id: lane, ...}, "junction_lane": [lane_id, ...]}
-        self.visible_distance = visible_distance # forward looking distance
-        self.state = init_state # current state of the vehicle
-        self.lane_id = lane_id # current lane id
+        self.actor=actor
+        self.id = actor.id
         self.start_waypoint = start_waypoint
         self.end_waypoint = end_waypoint
         self.cur_wp = start_waypoint # current waypoint
+        self.visible_distance = visible_distance # forward looking distance
 
-        self.length = 4.5 # vehicle length
+        self.route = route # edge_id
+        self.available_lanes = dict() # all of the available lanes in the route.
+                                    # edge_id -> {"available_lane": {lane_id: lane, ...}, "change_lane": {lane_id: lane, ...}, "junction_lane": [lane_id, ...]}
+        self.state:State=State(x = start_waypoint.x, y = start_waypoint.y, yaw = start_waypoint.z) # current state of the vehicle
+        self.lane_id: str =None
+
+        self.length = self.actor.bounding_box.extent.x * 2 # vehicle length#
+        self.width = self.actor.bounding_box.extent.y * 2# vehicle width#
         self.behaviour = Behaviour(8) # default bahaviour
 
         self.trajectory: Trajectory = None # vehicle trajectory
         self.next_available_lanes = set() # next available lanes, just include the available lanes in forward looking distance
 
+    def get_route(self,carla_map:carla.Map,roadgraph: RoadGraph):
+        if not self.route:
+            grp = GlobalRoutePlanner(carla_map, 0.5)
+            route_carla = grp.trace_route(self.start_waypoint.location, self.end_waypoint.location)
+            self.route = roadgraph.get_route_edge(route_carla)
+
+        self.lane_id=roadgraph.WP2Lane[(self.start_waypoint.road_id, self.start_waypoint.section_id, self.start_waypoint.lane_id)] # current lane id
+        self.state.s=roadgraph.get_lane_by_id(self.lane_id).course_spline.cartesian_to_frenet1D(
+            self.state.x, self.state.y)
 
     def get_available_lanes(self, roadgraph: RoadGraph) -> Set[str]:
         """根据当前车辆的lane以及visiable_distance，获取当前车辆可见范围内的lane信息(PS: 只考虑到本edge和下一个edge的情况)
@@ -159,8 +172,7 @@ class Vehicle:
                 length += lane_length/section.lane_num
             return length
         return 0
-        
-    
+
     def get_state_in_lane(self, lane) -> State:
         course_spline = lane.course_spline
 
@@ -179,7 +191,6 @@ class Vehicle:
                      yaw=self.state.yaw,
                      vel=self.state.vel,
                      acc=self.state.acc)
-        
 
     def arrive_destination(self):
         current_LC = carla.Location(x=self.state.x, y=self.state.y, z=self.state.yaw)

@@ -23,7 +23,7 @@ class Edge:
     """
     id: str = 0
     section_num: int = 0
-    next_edge_connect: Dict[int, List[str]] = field(default_factory=dict) # to_edge_id: [junction_lane_id, ...]
+    next_edge_connect: Dict[str, List[str]] = field(default_factory=dict) # to_edge_id: [junction_lane_id, ...]
     section_list: List[str] = field(default_factory=list) # 从终点开始的section_id
     last_segment: List[carla.Waypoint] = field(default_factory=list)
 
@@ -187,7 +187,6 @@ class JunctionLane(AbstractLane):
         for wp in self.start_wp.previous(RESOLUTION):
             if not wp.is_intersection:
                 return (wp.road_id, wp.section_id, wp.lane_id)
-        #TODO: key error bug in Town 04
         return None
 
     @cached_property
