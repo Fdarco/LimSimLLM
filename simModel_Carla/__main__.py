@@ -92,7 +92,6 @@ while True:
         ego_veh.state.s = max(0, ego_veh.state.s)
 
         # ------------ update lane_id and cur_wp ------------ #
-        # TODO: 应该改为函数
         if ego_veh.state.s > cur_lane.length:
             if ego_veh.cur_wp.is_junction:
             # 说明从junction进入edge，这个时候有可能有重叠的waypoint, 先按照上一个lane给出的next_junction作为id

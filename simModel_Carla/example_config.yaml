@@ -1,0 +1,6 @@
+map_name: Town06
+ego_path: None
+
+init:
+  - veh_num: 10
+  - travel_distance: 200
