@@ -20,11 +20,8 @@ import random
 class Model:
     def __init__(self,cfgFile: str=None,rouFile: str=None):
         # --------- config ---------#
-        if cfgFile:
-            self.cfgFile:str=cfgFile
-            self.cfg:Dict=load_config(self.cfgFile)
-        else:
-            self.cfg:Dict=default_config()#负责配置model的各个信息
+        self.cfgFile:str=cfgFile
+        self.cfg:Dict=load_config(self.cfgFile)
         self.rouFile=rouFile
 
         # --------- init carla and roadgraph --------- #
@@ -53,6 +50,10 @@ class Model:
         self.ego_id:int =-1
 
         self.timeStep:int = 0
+        self.updateInterval=self.cfg['updateInterval']
+        self.vehicleSpawnInterval=self.cfg['vehicleSpawnInterval']
+        self.vehicleCheckRange=self.cfg['vehicleCheckRange']
+        self.vehicleVisbleRange=self.cfg['vehicleVisibleRange']
 
         # tpStart marks whether the trajectory planning is started,
         # when the ego car appears in the network, tpStart turns into 1.
@@ -63,7 +64,7 @@ class Model:
 
     def start(self):
         # ---------- init actors --------- #
-        #TODO:根据随机初始化结果输出rouFile
+        #TODO:根据随机初始化结果输出rouFile,且思考rouFile后续如何使用
         self.vehicles,self.ego=self.initVehicles()
         self.pedestrians=self.initPedestrians()
         self.cycles=self.initCycles()
@@ -79,10 +80,67 @@ class Model:
 
         self.timeStep=0
 
-    def setAutoPilot(self):
-        for id,actor in self.v_actors.items():
-            if id!=self.ego_id:
+    def setAutoPilot(self,vehicle):
+        vehicle.actor.set_autopilot()
+        vehicle.isAutoPilot=True
+
+        #route会被改变，由carla的routeplanner
+        grp = GlobalRoutePlanner(self.carla_map, 0.5)
+        route_carla = grp.trace_route(vehicle.start_waypoint.location, vehicle.end_waypoint.location)
+        vehicle.route = self.roadgraph.get_route_edge(route_carla)
+
+        self.carla_tm.set_path(vehicle.actor,route_carla)
+
+    def runAutoPilot(self):
+        # TODO:创建了新车之后，也要将其设置成autopilot
+        self.carla_tm = self.client.get_trafficmanager()
+        self.tm_port = self.carla_tm.get_port()
+
+        for vehicle in self.vehicles:
+            if vehicle!=self.ego and not vehicle.isAutoPilot:
+                self.setAutoPilot(vehicle)
+
+        for id, actor in self.v_actors.items():
+            if id != self.ego_id:
                 actor.set_autopilot()
+    def shouldUpdate(self):
+        return self.timeStep%self.updateInterval==0
+    def shouldSpawnVeh(self):
+        return self.timeStep%self.vehicleSpawnInterval==0
+
+    def checkSpawnPoint(self,spawn_point):
+        for veh in self.vehicles:
+            cur_lc=veh.actor.get_location()
+            if spawn_point.distance(cur_lc)<=self.vehicleCheckRange:
+                cur_lane_id=veh.lane_id
+                sp_lane_id=self.roadgraph.get_laneID_by_xy(spawn_point.x,spawn_point.y,self.carla_map)
+                if cur_lane_id==sp_lane_id:
+                    return False
+        return True
+
+    def spawnVehicleRuntime(self):
+        blueprint_library=self.world.get_blueprint_library()
+        spawn_point = self.createSpawnPoints(1)[0]
+        if self.checkSpawnPoint(spawn_point):
+            vehicle_bp = random.choice(blueprint_library.filter('vehicle.*.*'))
+            actor = self.world.spawn_actor(vehicle_bp, spawn_point)
+            self.v_actors[actor.id] = actor
+
+            start_waypoint = self.carla_map.get_waypoint(actor.get_location())
+            route, end_waypoint = self.randomRoute(start_waypoint)
+
+            vehicle = Vehicle(actor,start_waypoint, end_waypoint, self.vehicleVisbleRange,route)
+            vehicle.get_route(self.carla_map,self.roadgraph)
+
+            if self.carla_tm:
+                self.setAutoPilot(vehicle)
+
+            self.vehicles.append(vehicle)
+            return True
+        else:
+            return False
+
+
 
     def moveStep(self):
         """
@@ -94,19 +152,22 @@ class Model:
 
         self.timeStep+=1
 
-        if self.timeStep%10==0:
-            #TODO:动态检测是否到达目的地，并生成新的车辆
+        if self.shouldUpdate():
             self.getSce()
             self.putRenderData()
             self.putCARLAImage()
             if not self.tpStart:
                 self.tpStart = 1
 
+        if self.shouldSpawnVeh():
+            spawn_success=self.spawnVehicleRuntime()
+
+
     def getSce(self):
         if not self.ego.arrive_destination():
             self.tpStart = 1
+            self.removeArrivedVeh()
             self.updateSurroundVeh()#更新AOI
-
             for v in self.vehicles:
                 self.getVehInfo(v)
             self.putVehicleINFO()
@@ -196,6 +257,7 @@ class Model:
     def putCARLAImage(self):
         pass
     def updateSurroundVeh(self):
+        #1.记录每个车是否在AOI内
         pass
     def updateVeh(self):
         """
@@ -206,7 +268,14 @@ class Model:
                 vehicle.state=vehicle.trajectory.states[0]
                 centerx, centery, yaw, speed, accel = vehicle.trajectory.pop_last_state()
                 self.v_actors[vehicle.id].set_transform(carla.Transform(location=carla.Location(x=centerx, y=centery, z=0),
-                                                    rotation=carla.Rotation(yaw=np.rad2deg(yaw))))
+                                                   rotation=carla.Rotation(yaw=np.rad2deg(yaw))))
+    def removeArrivedVeh(self):
+        for veh in self.vehicles:
+            if veh!=self.ego and veh.arrive_destination():
+                self.vehicles.remove(veh)
+                veh.actor.destroy()
+                del self.v_actors[veh.id]
+
     def destroy(self):
         # ------- close carla sync mode ------- #
         settings = self.world.get_settings()
@@ -235,7 +304,7 @@ class Model:
 
         self.v_actors[actor.id]=actor
 
-        vehicle = Vehicle(actor, start_waypoint, end_waypoint, 100, route)
+        vehicle = Vehicle(actor, start_waypoint, end_waypoint, self.vehicleVisbleRange, route)
         vehicle.get_route(self.carla_map, self.roadgraph)
         return vehicle,actor.id
 
@@ -251,9 +320,8 @@ class Model:
         vehicles=[]
         for id, actor in self.v_actors.items():
             start_waypoint = self.carla_map.get_waypoint(actor.get_location())
-            # TODO：终点可以是roadgrpah中某条道路的endwp
             route,end_waypoint=self.randomRoute(start_waypoint)
-            vehicle = Vehicle(actor,start_waypoint, end_waypoint, 100,route)
+            vehicle = Vehicle(actor,start_waypoint, end_waypoint, self.vehicleVisbleRange,route)
             vehicle.get_route(self.carla_map,self.roadgraph)
             vehicles.append(vehicle)
 
@@ -289,11 +357,11 @@ class Model:
     def initCycles(self):
         pass
 
-    def createSpawnPoints(self,k):
+    def createSpawnPoints(self,k:int)->list:
         spawn_points = self.carla_map.get_spawn_points()
         assert k<= len(spawn_points)
         randomSpawnPoints=random.sample(spawn_points,k)
-        #TODO：待确认spawnPoints的相距是否合理
+        #TODO：待确认spawnPoints的相距是否合理，现在默认是合理的，没有检查
         return randomSpawnPoints
 
 
@@ -312,11 +380,12 @@ if __name__=='__main__':
     #TODO:GUI update
     #gui = GUI(model)
     #gui.start()
+
     while not model.tpEnd:
         model.moveStep()
-        if model.timeStep%10 ==0:
+        if model.shouldUpdate():
             model.ego.next_available_lanes = model.ego.get_available_lanes(model.roadgraph)
-            model.ego.trajectory = planner.plan(model.ego, model.roadgraph, None, model.timeStep)
+            model.ego.trajectory = planner.plan(model.ego, model.roadgraph, None, model.timeStep)#TODO:采用model方法set_trajectory来给轨迹赋值
             print(model.ego.lane_id)
             print(model.ego.behaviour)
             world=model.world

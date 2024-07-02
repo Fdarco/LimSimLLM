@@ -48,6 +48,8 @@ class Vehicle:
         self.trajectory: Trajectory = None # vehicle trajectory
         self.next_available_lanes = set() # next available lanes, just include the available lanes in forward looking distance
 
+        self.isAutoPilot=False
+
     def get_route(self,carla_map:carla.Map,roadgraph: RoadGraph):
         if not self.route:
             grp = GlobalRoutePlanner(carla_map, 0.5)

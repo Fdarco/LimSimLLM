@@ -1,6 +1,9 @@
 map_name: Town06
 ego_path: None
-
+updateInvertval: 10
+vehicleSpawnInterval: 5
+vehicleVisibleRange: 100
+vehicleCheckRange: 10
 init:
   - veh_num: 10
   - travel_distance: 200
