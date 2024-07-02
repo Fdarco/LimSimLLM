@@ -38,7 +38,7 @@ class Vehicle:
         self.route = route # edge_id
         self.available_lanes = dict() # all of the available lanes in the route.
                                     # edge_id -> {"available_lane": {lane_id: lane, ...}, "change_lane": {lane_id: lane, ...}, "junction_lane": [lane_id, ...]}
-        self.state:State=State(x = start_waypoint.x, y = start_waypoint.y, yaw = start_waypoint.z) # current state of the vehicle
+        self.state:State=State(x = start_waypoint.transform.location.x, y = start_waypoint.transform.location.y, yaw = start_waypoint.transform.location.z) # current state of the vehicle
         self.lane_id: str =None
 
         self.length = self.actor.bounding_box.extent.x * 2 # vehicle length#
@@ -57,7 +57,7 @@ class Vehicle:
             self.route = roadgraph.get_route_edge(route_carla)
 
         self.lane_id=roadgraph.WP2Lane[(self.start_waypoint.road_id, self.start_waypoint.section_id, self.start_waypoint.lane_id)] # current lane id
-        self.state.s=roadgraph.get_lane_by_id(self.lane_id).course_spline.cartesian_to_frenet1D(
+        self.state.s, _=roadgraph.get_lane_by_id(self.lane_id).course_spline.cartesian_to_frenet1D(
             self.state.x, self.state.y)
 
     def get_available_lanes(self, roadgraph: RoadGraph) -> Set[str]:

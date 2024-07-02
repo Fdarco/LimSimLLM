@@ -26,8 +26,8 @@ class Model:
 
         # --------- init carla and roadgraph --------- #
         self.client = carla.Client('localhost', 2000)
-        self.client.set_timeout(2.0)
-        self.client.load_world_if_different(self.cfg['map_name'])
+        self.client.set_timeout(20.0)
+        self.client.load_world(self.cfg['map_name'])
         self.world = self.client.get_world()
         self.carla_map = self.world.get_map()
         self.topology = self.carla_map.get_topology()
@@ -37,13 +37,13 @@ class Model:
         self.roadInfoGet = RoadInfoGet(self.roadgraph, self.topology)
 
         # --------- define actors-related property --------- #
-        self.v_actors:Dict[int,carla.libcarla.Actor]=field(default_factory=dict)
+        self.v_actors:Dict[int,carla.libcarla.Vehicle]={}
         self.vehicles:list =[]
 
-        self.p_actors:Dict[int,carla.libcarla.Actor]=field(default_factory=dict)
+        self.p_actors:Dict[int,carla.libcarla.Actor]={}
         self.pedestrians:list=[]
 
-        self.c_actors:Dict[int,carla.libcarla.Actor]=field(default_factory=dict)
+        self.c_actors:Dict[int,carla.libcarla.Actor]={}
         self.cycles:list=[]
 
         self.ego:Vehicle=None
@@ -65,7 +65,7 @@ class Model:
     def start(self):
         # ---------- init actors --------- #
         #TODO:根据随机初始化结果输出rouFile,且思考rouFile后续如何使用
-        self.vehicles,self.ego=self.initVehicles()
+        self.vehicles=self.initVehicles()
         self.pedestrians=self.initPedestrians()
         self.cycles=self.initCycles()
 
@@ -86,8 +86,11 @@ class Model:
 
         #route会被改变，由carla的routeplanner
         grp = GlobalRoutePlanner(self.carla_map, 0.5)
-        route_carla = grp.trace_route(vehicle.start_waypoint.location, vehicle.end_waypoint.location)
+        route_carla = grp.trace_route(vehicle.start_waypoint.transform.location, vehicle.end_waypoint.transform.location)
         vehicle.route = self.roadgraph.get_route_edge(route_carla)
+
+        #TODO: check if path can work
+        route_carla=[wp[0].transform.location for wp in route_carla]
 
         self.carla_tm.set_path(vehicle.actor,route_carla)
 
@@ -111,9 +114,9 @@ class Model:
     def checkSpawnPoint(self,spawn_point):
         for veh in self.vehicles:
             cur_lc=veh.actor.get_location()
-            if spawn_point.distance(cur_lc)<=self.vehicleCheckRange:
+            if spawn_point.location.distance(cur_lc)<=self.vehicleCheckRange:
                 cur_lane_id=veh.lane_id
-                sp_lane_id=self.roadgraph.get_laneID_by_xy(spawn_point.x,spawn_point.y,self.carla_map)
+                sp_lane_id=self.roadgraph.get_laneID_by_xy(spawn_point.location.x,spawn_point.location.y,self.carla_map)
                 if cur_lane_id==sp_lane_id:
                     return False
         return True
@@ -288,22 +291,20 @@ class Model:
         blueprint_library=self.world.get_blueprint_library()
         vehicle_bp = random.choice(blueprint_library.filter('vehicle.*.*'))
 
-        if self.cfg['ego_path']:
+        if self.cfg['ego_path']!='None':
             #TODO：检查一下route的格式，解析他，设计ego_path的格式
             raise NotImplementedError
-        else:
+        
+        start_waypoint = self.createSpawnPoints(k=1)[0]
+        wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
+        while wp_isjunction:
             start_waypoint = self.createSpawnPoints(k=1)[0]
-            route, end_waypoint = self.randomRoute(start_waypoint)
-
-        try:
-            actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
-        except:
-            start_waypoint = self.createSpawnPoints(k=1)[0]
-            route, end_waypoint = self.randomRoute(start_waypoint)
-            actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
-
+            wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
+        actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
         self.v_actors[actor.id]=actor
 
+        start_waypoint=self.carla_map.get_waypoint(actor.get_location())
+        route, end_waypoint = self.randomRoute(start_waypoint)
         vehicle = Vehicle(actor, start_waypoint, end_waypoint, self.vehicleVisbleRange, route)
         vehicle.get_route(self.carla_map, self.roadgraph)
         return vehicle,actor.id
@@ -312,10 +313,13 @@ class Model:
         blueprint_library=self.world.get_blueprint_library()
 
         spawn_points = self.createSpawnPoints(self.cfg['init']['veh_num'])
-        for i in self.cfg['init']['veh_num']:
-            vehicle_bp = random.choice(blueprint_library.filter('vehicle.*.*'))
-            actor=self.world.spawn_actor(vehicle_bp, spawn_points[i])
-            self.v_actors[actor.id]=actor
+        for i in range(self.cfg['init']['veh_num']):
+            try:
+                vehicle_bp = random.choice(blueprint_library.filter('vehicle.*.*'))
+                actor=self.world.spawn_actor(vehicle_bp, spawn_points[i])
+                self.v_actors[actor.id]=actor
+            except RuntimeError:
+                pass
 
         vehicles=[]
         for id, actor in self.v_actors.items():
@@ -329,13 +333,19 @@ class Model:
 
     def randomRoute(self,start_waypoint):
         #1.找到当前edge
+        route=[]
         cur_lane_id=self.roadgraph.WP2Lane[(start_waypoint.road_id,start_waypoint.section_id,start_waypoint.lane_id)]
-        cur_edge= self.roadgraph.get_lane_by_id(cur_lane_id).affiliated_section.affliated_edge
+        try:
+            cur_edge= self.roadgraph.get_lane_by_id(cur_lane_id).affiliated_section.affliated_edge
+        except AttributeError:
+            cur_junction=self.roadgraph.get_lane_by_id(cur_lane_id)
+            cur_edge=self.roadgraph.Edges[cur_junction.outgoing_edge_id]
+            route=[cur_junction.incoming_edge_id]
         #2.沿着连接关系去找终点，直到满足长度限制：
         search_length=0
-        route=[cur_edge.id]
+        route.append(cur_edge.id)
         lane=None
-        while search_length < self.cfg['travel_distance']:
+        while search_length < self.cfg['init']['travel_distance']:
             next_edge_list=list(cur_edge.next_edge_connect.keys())
             next_edge_id=random.choice(next_edge_list)
             next_edge=self.roadgraph.Edges[next_edge_id]
@@ -366,14 +376,13 @@ class Model:
 
 
 if __name__=='__main__':
-    config_name='example.yaml'
+    config_name='./simModel_Carla/example_config.yaml'
 
     model=Model(cfgFile=config_name)
     planner = LLMEgoPlanner()
 
     model.start()
-    model.setAutoPilot()
-
+    model.runAutoPilot()
     model.ego.available_lanes = model.roadgraph.get_all_available_lanes(model.ego.route, model.ego.end_waypoint)
     model.ego.next_available_lanes =  model.ego.get_available_lanes(model.roadgraph)
     model.ego.trajectory=planner.plan(model.ego, model.roadgraph, None, model.timeStep)

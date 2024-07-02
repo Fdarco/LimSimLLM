@@ -50,7 +50,7 @@ def draw_roadgraph(roadgraph: RoadGraph):
             color = random_color()
             for junction_id in junction_list:
                 junction_lane = roadgraph.Junction_Dict[junction_id]
-                for wp in junction_lane.start_waypoint.next_until_lane_end(RESOLUTION):
+                for wp in junction_lane.start_wp.next_until_lane_end(RESOLUTION):
                     ax.plot([wp.transform.location.x], [wp.transform.location.y], color = color, marker='o', markersize=1)
 
     plt.show()
