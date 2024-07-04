@@ -92,7 +92,11 @@ class RoadGraph:
         lc = carla.Location(x=x, y=y)
         waypoint = carla_map.get_waypoint(lc)
 
-        return self.WP2Lane[(waypoint.road_id, waypoint.section_id, waypoint.lane_id)], waypoint
+        try:
+            lane_id=self.WP2Lane[(waypoint.road_id, waypoint.section_id, waypoint.lane_id)]
+        except KeyError:
+            lane_id=None
+        return lane_id, waypoint
     
     def get_all_available_lanes(self, route: List[str], destination_wp: carla.Waypoint) -> Dict[str, Dict[str, List[NormalLane]]]:
         """从道路连接处的junction lane倒推，找到edge中每段section的lane

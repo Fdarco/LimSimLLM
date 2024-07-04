@@ -98,6 +98,7 @@ class Model:
         # TODO:创建了新车之后，也要将其设置成autopilot
         self.carla_tm = self.client.get_trafficmanager()
         self.tm_port = self.carla_tm.get_port()
+        self.carla_tm.set_synchronous_mode(True)
 
         for vehicle in self.vehicles:
             if vehicle!=self.ego and not vehicle.isAutoPilot:
@@ -124,9 +125,9 @@ class Model:
     def spawnVehicleRuntime(self):
         blueprint_library=self.world.get_blueprint_library()
         spawn_point = self.createSpawnPoints(1)[0]
-        if self.checkSpawnPoint(spawn_point):
-            vehicle_bp = random.choice(blueprint_library.filter('vehicle.*.*'))
-            actor = self.world.spawn_actor(vehicle_bp, spawn_point)
+        vehicle_bp = random.choice(blueprint_library.filter('vehicle.mercedes.*'))
+        actor = self.world.try_spawn_actor(vehicle_bp, spawn_point)
+        if actor:
             self.v_actors[actor.id] = actor
 
             start_waypoint = self.carla_map.get_waypoint(actor.get_location())
@@ -164,6 +165,7 @@ class Model:
 
         if self.shouldSpawnVeh():
             spawn_success=self.spawnVehicleRuntime()
+            print('spawn_success:',spawn_success)
 
 
     def getSce(self):
@@ -172,7 +174,8 @@ class Model:
             self.removeArrivedVeh()
             self.updateSurroundVeh()#更新AOI
             for v in self.vehicles:
-                self.getVehInfo(v)
+                if v.actor.is_active:
+                    self.getVehInfo(v)
             self.putVehicleINFO()
         else:
             if self.tpStart:
@@ -213,7 +216,8 @@ class Model:
                     else:  # next is junction lane
                         cur_edge_id = next_normal_lane.affiliated_section.affliated_edge.id
                         # 找到cur_lane对应的junction_lane
-                        for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
+                        # for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
+                        for junction_lane in list(self.roadgraph.Junction_Dict.values()):
                             if self.roadgraph.WP2Lane[junction_lane.previous_lane] == next_normal_lane.id:
                                 vehicle.lane_id = junction_lane.id
                                 vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(
@@ -227,15 +231,27 @@ class Model:
             else:
                 # 说明从edge进入junction
                 cur_edge_id = self.roadgraph.get_lane_by_id(vehicle.lane_id).affiliated_section.affliated_edge.id
-                for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
+                # for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
+                if not vehicle.available_lanes:
+                    for junction_lane in list(self.roadgraph.Junction_Dict.values()):
                     # 找到cur_lane对应的junction_lane
-                    if self.roadgraph.WP2Lane[junction_lane.previous_lane] == vehicle.lane_id:
-                        vehicle.lane_id = junction_lane.id
-                        vehicle.cur_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,vehicle.state.s - cur_lane.length)
-                        vehicle.state.s, _ = self.roadgraph.get_lane_by_id(
-                            vehicle.lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
-                        vehicle.state.s = max(0, vehicle.state.s)
-                        break
+                        if self.roadgraph.WP2Lane[junction_lane.previous_lane] == vehicle.lane_id:
+                            vehicle.lane_id = junction_lane.id
+                            vehicle.cur_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,vehicle.state.s - cur_lane.length)
+                            vehicle.state.s, _ = self.roadgraph.get_lane_by_id(
+                                vehicle.lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
+                            vehicle.state.s = max(0, vehicle.state.s)
+                            break
+                else:
+                    for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
+                        if self.roadgraph.WP2Lane[junction_lane.previous_lane] == vehicle.lane_id:
+                            vehicle.lane_id = junction_lane.id
+                            vehicle.cur_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,vehicle.state.s - cur_lane.length)
+                            vehicle.state.s, _ = self.roadgraph.get_lane_by_id(
+                                vehicle.lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
+                            vehicle.state.s = max(0, vehicle.state.s)
+                            break
+                
 
         if vehicle.cur_wp.is_junction:
             # lane_id,cur_wp=self.roadgraph.get_laneID_by_s(vehicle.cur_wp.road_id, vehicle.cur_wp.lane_id,
@@ -278,6 +294,14 @@ class Model:
                 self.vehicles.remove(veh)
                 veh.actor.destroy()
                 del self.v_actors[veh.id]
+                continue
+            if veh!=self.ego and veh.actor.is_active:
+                cur_wp=self.carla_map.get_waypoint(veh.actor.get_location())
+                if cur_wp.lane_type!=carla.libcarla.LaneType.Driving:
+                    self.vehicles.remove(veh)
+                    veh.actor.destroy()
+                    del self.v_actors[veh.id]
+                    continue
 
     def destroy(self):
         # ------- close carla sync mode ------- #
@@ -289,17 +313,17 @@ class Model:
 
     def initEgo(self):
         blueprint_library=self.world.get_blueprint_library()
-        vehicle_bp = random.choice(blueprint_library.filter('vehicle.*.*'))
+        vehicle_bp = random.choice(blueprint_library.filter('vehicle.tesla.*'))
 
         if self.cfg['ego_path']!='None':
             #TODO：检查一下route的格式，解析他，设计ego_path的格式
             raise NotImplementedError
         
         start_waypoint = self.createSpawnPoints(k=1)[0]
-        wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
-        while wp_isjunction:
-            start_waypoint = self.createSpawnPoints(k=1)[0]
-            wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
+        # wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
+        # while wp_isjunction:
+        #     start_waypoint = self.createSpawnPoints(k=1)[0]
+        #     wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
         actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
         self.v_actors[actor.id]=actor
 
@@ -315,7 +339,7 @@ class Model:
         spawn_points = self.createSpawnPoints(self.cfg['init']['veh_num'])
         for i in range(self.cfg['init']['veh_num']):
             try:
-                vehicle_bp = random.choice(blueprint_library.filter('vehicle.*.*'))
+                vehicle_bp = random.choice(blueprint_library.filter('vehicle.mercedes.*'))
                 actor=self.world.spawn_actor(vehicle_bp, spawn_points[i])
                 self.v_actors[actor.id]=actor
             except RuntimeError:
@@ -349,6 +373,8 @@ class Model:
             next_edge_list=list(cur_edge.next_edge_connect.keys())
             next_edge_id=random.choice(next_edge_list)
             next_edge=self.roadgraph.Edges[next_edge_id]
+            if next_edge_id in route:
+                break
 
             section=self.roadgraph.Sections[next_edge.section_list[0]]
             lane=self.roadgraph.NormalLane_Dict[list(section.lanes.values())[0]]
@@ -377,10 +403,12 @@ class Model:
 
 if __name__=='__main__':
     config_name='./simModel_Carla/example_config.yaml'
+    random.seed(112)
+
 
     model=Model(cfgFile=config_name)
     planner = LLMEgoPlanner()
-
+    
     model.start()
     model.runAutoPilot()
     model.ego.available_lanes = model.roadgraph.get_all_available_lanes(model.ego.route, model.ego.end_waypoint)
@@ -389,7 +417,7 @@ if __name__=='__main__':
     #TODO:GUI update
     #gui = GUI(model)
     #gui.start()
-
+    model.world.debug.draw_point(model.ego.end_waypoint.transform.location, color=carla.Color(r=255, g=255, b=255), life_time=1000, size=1)
     while not model.tpEnd:
         model.moveStep()
         if model.shouldUpdate():

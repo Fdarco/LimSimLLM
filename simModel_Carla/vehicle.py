@@ -96,6 +96,10 @@ class Vehicle:
         elif isinstance(lane, JunctionLane):
             cur_edge = roadgraph.Edges[lane.incoming_edge_id]
             next_edge = roadgraph.Edges[lane.outgoing_edge_id]
+            if next_edge.id not in self.route:
+                cur_idx=self.route.index(cur_edge.id)
+                next_idx=cur_idx+1
+                next_edge=roadgraph.Edges[self.route[next_idx]]
             output = set()
             output.update([lane.id for lane in self.available_lanes[cur_edge.id]["junction_lane"]])
             if next_edge == self.route[-1]:
