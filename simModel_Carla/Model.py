@@ -16,6 +16,8 @@ import numpy as np
 import sys
 from typing import Dict, Union, Set, List
 import random
+import os
+import pickle
 
 class Model:
     def __init__(self,cfgFile: str=None,rouFile: str=None):
@@ -34,8 +36,18 @@ class Model:
         self.spectator = self.world.get_spectator()
 
         self.roadgraph = RoadGraph()
-        self.roadInfoGet = RoadInfoGet(self.roadgraph, self.topology)
-
+        self.map_cache_path=os.path.join(os.getcwd(), 'map_cache', self.cfg['map_name'])
+        if os.path.exists(self.map_cache_path):
+            # Load the cache file
+            with open(self.map_cache_path, 'rb') as f:
+                self.roadgraph = pickle.load(f)
+            print("Loaded roadgraph from cache.")
+        else:
+            # Call RoadInfoGet and save the result to the cache file
+            self.roadInfoGet = RoadInfoGet(self.roadgraph, self.topology)
+            with open(self.map_cache_path, 'wb') as f:
+                pickle.dump(self.roadgraph, f)
+            print("Generated roadgraph and saved to cache.")
         # --------- define actors-related property --------- #
         self.v_actors:Dict[int,carla.libcarla.Vehicle]={}
         self.vehicles:list =[]
@@ -89,13 +101,11 @@ class Model:
         route_carla = grp.trace_route(vehicle.start_waypoint.transform.location, vehicle.end_waypoint.transform.location)
         vehicle.route = self.roadgraph.get_route_edge(route_carla)
 
-        #TODO: check if path can work
         route_carla=[wp[0].transform.location for wp in route_carla]
 
         self.carla_tm.set_path(vehicle.actor,route_carla)
 
     def runAutoPilot(self):
-        # TODO:创建了新车之后，也要将其设置成autopilot
         self.carla_tm = self.client.get_trafficmanager()
         self.tm_port = self.carla_tm.get_port()
         self.carla_tm.set_synchronous_mode(True)
@@ -397,7 +407,6 @@ class Model:
         spawn_points = self.carla_map.get_spawn_points()
         assert k<= len(spawn_points)
         randomSpawnPoints=random.sample(spawn_points,k)
-        #TODO：待确认spawnPoints的相距是否合理，现在默认是合理的，没有检查
         return randomSpawnPoints
 
 
