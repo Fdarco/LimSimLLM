@@ -230,3 +230,67 @@ class RoadGraph:
         
         return route_edge_list
     
+    def wp_transform(self,carla_map):
+        """
+        To cache or load RoadGraph, need to mutual conversion between waypoints and dict
+        """
+        def wp_to_dict(wp:carla.libcarla.Waypoint):
+            if type(wp)==dict:
+                return wp
+            wp_d={}
+            wp_d['road_id']=wp.road_id
+            wp_d['section_id']=wp.section_id
+            wp_d['lane_id']=wp.lane_id
+            wp_d['s']=wp.s
+            return wp_d
+        def dict_to_wp(wp_d:dict):
+            if type(wp_d)!=dict:
+                return wp_d
+            return carla_map.get_waypoint_xodr(wp_d['road_id'],wp_d['lane_id'],wp_d['s'])
+            
+        for edge in list(self.Edges.values()):
+            if edge.last_segment:
+                if type(edge.last_segment[0])!=dict:
+                    edge.last_segment=[wp_to_dict(wp) for wp in edge.last_segment]
+                else:
+                    edge.last_segment=[dict_to_wp(wp) for wp in edge.last_segment]
+                    wp_list=[]
+                    for wp in edge.last_segment:
+                        if wp:
+                            wp_list.append(wp)
+                    edge.last_segment=wp_list
+        
+        for lane in list(self.NormalLane_Dict.values()):
+            if lane.wp_list:
+                if type(lane.wp_list[0])!=dict:
+                    lane.wp_list=[wp_to_dict(wp) for wp in lane.wp_list]
+                    lane.start_wp=wp_to_dict(lane.start_wp)
+                    lane.end_wp=wp_to_dict(lane.end_wp)
+                else:
+                    lane.wp_list=[dict_to_wp(wp) for wp in lane.wp_list]
+                    wp_list=[]
+                    for wp in lane.wp_list:
+                        if wp:
+                            wp_list.append(wp)
+                    lane.wp_list=wp_list
+                    lane.start_wp=dict_to_wp(lane.start_wp) if dict_to_wp(lane.start_wp)!=None else lane.wp_list[0]
+                    lane.end_wp=dict_to_wp(lane.end_wp) if dict_to_wp(lane.end_wp)!=None else lane.wp_list[-1]
+
+        for lane in list(self.Junction_Dict.values()):
+            if lane.wp_list:
+                if type(lane.wp_list[0])!=dict:
+                    lane.wp_list=[wp_to_dict(wp) for wp in lane.wp_list]
+                    lane.start_wp=wp_to_dict(lane.start_wp)
+                    lane.end_wp=wp_to_dict(lane.end_wp)
+                else:
+                    lane.wp_list=[dict_to_wp(wp) for wp in lane.wp_list]
+                    wp_list=[]
+                    for wp in lane.wp_list:
+                        if wp:
+                            wp_list.append(wp)
+                    lane.wp_list=wp_list
+                    lane.start_wp=dict_to_wp(lane.start_wp) if dict_to_wp(lane.start_wp)!=None else lane.wp_list[0]
+                    lane.end_wp=dict_to_wp(lane.end_wp) if dict_to_wp(lane.end_wp)!=None else lane.wp_list[-1]
+
+
+

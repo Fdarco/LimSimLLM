@@ -17,7 +17,7 @@ import sys
 from typing import Dict, Union, Set, List
 import random
 import os
-import pickle
+import dill
 
 class Model:
     def __init__(self,cfgFile: str=None,rouFile: str=None):
@@ -36,18 +36,9 @@ class Model:
         self.spectator = self.world.get_spectator()
 
         self.roadgraph = RoadGraph()
-        self.map_cache_path=os.path.join(os.getcwd(), 'map_cache', self.cfg['map_name'])
-        if os.path.exists(self.map_cache_path):
-            # Load the cache file
-            with open(self.map_cache_path, 'rb') as f:
-                self.roadgraph = pickle.load(f)
-            print("Loaded roadgraph from cache.")
-        else:
-            # Call RoadInfoGet and save the result to the cache file
-            self.roadInfoGet = RoadInfoGet(self.roadgraph, self.topology)
-            with open(self.map_cache_path, 'wb') as f:
-                pickle.dump(self.roadgraph, f)
-            print("Generated roadgraph and saved to cache.")
+        self.map_cache_path=os.path.join(os.getcwd(),'simModel_Carla','map_cache', f"{self.cfg['map_name']}.pkl")
+        self.check_and_load_mapcache()
+
         # --------- define actors-related property --------- #
         self.v_actors:Dict[int,carla.libcarla.Vehicle]={}
         self.vehicles:list =[]
@@ -91,6 +82,23 @@ class Model:
         self.world.tick()
 
         self.timeStep=0
+    
+    def check_and_load_mapcache(self):
+        if os.path.exists(self.map_cache_path) and not self.cfg['rebuild_roadgraph']:
+            with open(self.map_cache_path, 'rb') as f:
+                self.roadgraph = dill.load(f)
+            #transform wp_list of lane from dict to carla.Waypoint, because waypoint cant be pickled
+            self.roadgraph.wp_transform(self.carla_map)
+            print("Loaded roadgraph from cache.")
+        else:
+            self.roadInfoGet = RoadInfoGet(self.roadgraph, self.topology)
+            #Waypoint -> dict 
+            self.roadgraph.wp_transform(self.carla_map)
+            with open(self.map_cache_path, 'wb') as f:
+                dill.dump(self.roadgraph, f)
+            #dict -> Waypoint
+            self.roadgraph.wp_transform(self.carla_map)
+            print("Generated roadgraph and saved to cache.")
 
     def setAutoPilot(self,vehicle):
         vehicle.actor.set_autopilot()

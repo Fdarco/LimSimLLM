@@ -1,5 +1,6 @@
 map_name: Town06
 ego_path: None
+rebuild_roadgraph: False
 updateInterval: 10
 vehicleSpawnInterval: 50
 vehicleVisibleRange: 100
