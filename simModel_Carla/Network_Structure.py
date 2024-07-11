@@ -146,6 +146,9 @@ class NormalLane(AbstractLane):
             for wp in self.start_wp.previous(RESOLUTION):
                 if not wp.is_intersection:
                     return (wp.road_id, wp.section_id, wp.lane_id)
+            for wp in self.start_wp.previous(5*RESOLUTION):
+                if not wp.is_intersection:
+                    return (wp.road_id, wp.section_id, wp.lane_id)
         return None
 
     @cached_property
@@ -157,6 +160,9 @@ class NormalLane(AbstractLane):
         """
         if self.affiliated_section.next_section_id:
             for wp in self.end_wp.next(2*RESOLUTION):
+                if not (wp.is_intersection or self.wp_equal(wp)):
+                    return (wp.road_id, wp.section_id, wp.lane_id)
+            for wp in self.end_wp.next(5*RESOLUTION):
                 if not (wp.is_intersection or self.wp_equal(wp)):
                     return (wp.road_id, wp.section_id, wp.lane_id)
         return None
@@ -177,7 +183,7 @@ class JunctionLane(AbstractLane):
     incoming_edge_id: str = 0
     outgoing_edge_id: str = 0
 
-    @cached_property
+    @property
     def previous_lane(self) -> Tuple[int, int, int]:
         """the junction lane's previous lane is normal lane
 
@@ -185,11 +191,14 @@ class JunctionLane(AbstractLane):
             Tuple[int, int, int]: road_id, section_id, lane_id
         """
         for wp in self.start_wp.previous(RESOLUTION):
-            if not wp.is_intersection:
+            if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.start_wp.road_id, self.start_wp.section_id,self.start_wp.lane_id):
+                return (wp.road_id, wp.section_id, wp.lane_id)
+        for wp in self.start_wp.previous(RESOLUTION*5):
+            if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.start_wp.road_id, self.start_wp.section_id,self.start_wp.lane_id):
                 return (wp.road_id, wp.section_id, wp.lane_id)
         return None
 
-    @cached_property
+    @property
     def next_lane(self) -> Tuple[int, int, int]:
         """the junction lane's next lane is normal lane
 
@@ -197,6 +206,9 @@ class JunctionLane(AbstractLane):
             Tuple[int, int, int]: road_id, section_id, lane_id
         """
         for wp in self.end_wp.next(RESOLUTION):
-            if not wp.is_intersection:
+            if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
+                return (wp.road_id, wp.section_id, wp.lane_id)
+        for wp in self.end_wp.next(RESOLUTION*5):
+            if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
                 return (wp.road_id, wp.section_id, wp.lane_id)
         return None

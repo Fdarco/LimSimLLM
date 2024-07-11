@@ -312,16 +312,34 @@ if __name__ == '__main__':
     carla_map = world.get_map()
     topology = carla_map.get_topology()
     
+
+    settings = world.get_settings()
+    settings.synchronous_mode = False
+    settings.fixed_delta_seconds = None
+    world.apply_settings(settings)
+
+    # test_point=carla_map.get_waypoint_xodr(652,4,35.36)
+    # previous_test_point=test_point.previous(0.5)[0]
+    # test_wp_list=previous_test_point.next_until_lane_end(0.1)
+    # world.debug.draw_string(test_point.transform.location, str('A'), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+    # world.debug.draw_string(previous_test_point.transform.location,'B', draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+    # test_point=carla_map.get_waypoint_xodr(64,-5,121)
+    # world.debug.draw_string(test_point.transform.location, str('A'), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+
+    
     roadgraph = RoadGraph()
     road_info_get = RoadInfoGet(roadgraph, topology) # 用RoadInfoGet去更新roadgraph
 
+    from draw import draw_roadgraph
+    draw_roadgraph(roadgraph=roadgraph)
+
     for item in roadgraph.Edges.items():
-        world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=100)
+        world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
 
     # -------------------- test ------------------- #
     spawn_points = carla_map.get_spawn_points() # 选出适合放置车辆的位置
     origin = carla.Location(spawn_points[20].location)
-    destination = carla.Location(spawn_points[100].location)  
+    destination = carla.Location(spawn_points[120].location)  
 
     grp = GlobalRoutePlanner(carla_map, 0.5)
     route = grp.trace_route(origin, destination)
@@ -333,16 +351,20 @@ if __name__ == '__main__':
     
     available_dict = roadgraph.get_all_available_lanes(route_edge_list, route[-1][0])
 
-    # ----------------- 在carla中画出available lane ----------------- #
-    for edge_id, available_lanes in available_dict.items():
-        for section_id, lanes in available_lanes['available_lane'].items():
-            for lane in lanes:
-                # if lane in available_lanes['change_lane']:
-                #     continue
-                world.debug.draw_line(lane.wp_list[0].transform.location, lane.wp_list[-1].transform.location, color=carla.Color(r=0, g=255, b=0), thickness=1.0, life_time=100)
-        for junction_lane in available_lanes['junction_lane']:
-            world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=0, g=0, b=255), thickness=1.0, life_time=100)
-        for section_id, lanes in available_lanes['change_lane'].items():
-            for lane in lanes:
-                world.debug.draw_line(lane.wp_list[0].transform.location, lane.wp_list[-1].transform.location, color=carla.Color(r=255, g=0, b=0), thickness=1.0, life_time=100)
-
+    # # ----------------- 在carla中画出available lane ----------------- #
+    # for edge_id, available_lanes in available_dict.items():
+    #     for section_id, lanes in available_lanes['available_lane'].items():
+    #         for lane in lanes:
+    #             # if lane in available_lanes['change_lane']:
+    #             #     continue
+    #             world.debug.draw_line(lane.wp_list[0].transform.location, lane.wp_list[-1].transform.location, color=carla.Color(r=0, g=255, b=0), thickness=1.0, life_time=100)
+    #     for junction_lane in available_lanes['junction_lane']:
+    #         world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=0, g=0, b=255), thickness=1.0, life_time=100)
+    #     for section_id, lanes in available_lanes['change_lane'].items():
+    #         for lane in lanes:
+    #             world.debug.draw_line(lane.wp_list[0].transform.location, lane.wp_list[-1].transform.location, color=carla.Color(r=255, g=0, b=0), thickness=1.0, life_time=100)
+    
+    for junction_lane in list(roadgraph.Junction_Dict.values()):
+        world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=0, g=0, b=255), thickness=1.0, life_time=100)
+    # for junction_lane in list(roadgraph.NormalLane_Dict.values()):
+    #     world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=255, g=0, b=255), thickness=1.0, life_time=100)

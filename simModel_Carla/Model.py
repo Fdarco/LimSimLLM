@@ -57,6 +57,7 @@ class Model:
         self.vehicleSpawnInterval=self.cfg['vehicleSpawnInterval']
         self.vehicleCheckRange=self.cfg['vehicleCheckRange']
         self.vehicleVisbleRange=self.cfg['vehicleVisibleRange']
+        self.max_veh_num=self.cfg['max_veh_num']
 
         # tpStart marks whether the trajectory planning is started,
         # when the ego car appears in the network, tpStart turns into 1.
@@ -125,10 +126,11 @@ class Model:
         for id, actor in self.v_actors.items():
             if id != self.ego_id:
                 actor.set_autopilot()
+
     def shouldUpdate(self):
         return self.timeStep%self.updateInterval==0
     def shouldSpawnVeh(self):
-        return self.timeStep%self.vehicleSpawnInterval==0
+        return self.timeStep%self.vehicleSpawnInterval==0 and len(self.vehicles)<self.max_veh_num
 
     def checkSpawnPoint(self,spawn_point):
         for veh in self.vehicles:
@@ -206,86 +208,48 @@ class Model:
         vehicle.state.x = actor.get_location().x
         vehicle.state.y = actor.get_location().y
         vehicle.state.yaw = np.deg2rad(actor.get_transform().rotation.yaw)
-        vehicle.state.s, _ = self.roadgraph.get_lane_by_id(vehicle.lane_id).course_spline.cartesian_to_frenet1D(
-            vehicle.state.x, vehicle.state.y)
 
+        vehicle.lane_id,vehicle.state.s,vehicle.cur_wp=self.localization(vehicle)
+    
+    def localization(self,vehicle):
         cur_lane = self.roadgraph.get_lane_by_id(vehicle.lane_id)
-        vehicle.state.s = max(0, vehicle.state.s)
+        cur_wp=vehicle.cur_wp if vehicle.cur_wp else self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y))
+        carla_wp=self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y))
 
-        # ------------ update lane_id and cur_wp ------------ #
-        if vehicle.state.s > cur_lane.length:
-            if vehicle.cur_wp.is_junction:
-                # 说明从junction进入edge，这个时候有可能有重叠的waypoint, 先按照上一个lane给出的next_junction作为id
-                next_normal_lane = self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[cur_lane.next_lane])
-                vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(next_normal_lane.start_wp.road_id,
-                                                                            next_normal_lane.start_wp.lane_id,
-                                                                            vehicle.state.s - cur_lane.length,
-                                                                            self.carla_map)
-                while (vehicle.lane_id == None):
-                    # 说明这个长度已经超过了下一个lane了
-                    vehicle.state.s = vehicle.state.s - cur_lane.length
-                    cur_lane = next_normal_lane
-                    if next_normal_lane.next_lane:
-                        next_normal_lane = self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[next_normal_lane.next_lane])
-                        vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(next_normal_lane.start_wp.road_id,
-                                                                                    next_normal_lane.start_wp.lane_id,
-                                                                                    vehicle.state.s - cur_lane.length,
-                                                                                    self.carla_map)
-                    else:  # next is junction lane
-                        cur_edge_id = next_normal_lane.affiliated_section.affliated_edge.id
-                        # 找到cur_lane对应的junction_lane
-                        # for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
-                        for junction_lane in list(self.roadgraph.Junction_Dict.values()):
-                            if self.roadgraph.WP2Lane[junction_lane.previous_lane] == next_normal_lane.id:
-                                vehicle.lane_id = junction_lane.id
-                                vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_s(
-                                    junction_lane.start_wp.road_id, junction_lane.start_wp.lane_id,
-                                    vehicle.state.s - cur_lane.length, self.carla_map)
-
-                vehicle.state.s, _ = self.roadgraph.get_lane_by_id(vehicle.lane_id).course_spline.cartesian_to_frenet1D(
-                    vehicle.state.x, vehicle.state.y)
-                vehicle.state.s = max(0, vehicle.state.s)
-
+        if carla_wp.is_junction:
+            junction=carla_wp.get_junction()
+            wp_tuple = junction.get_waypoints(carla.LaneType.Driving)
+            possible_junctionlane=[]
+            for i in range(len(wp_tuple)):
+                (start_wp, _) = wp_tuple[i]
+                if (start_wp.road_id,start_wp.section_id,start_wp.lane_id) in self.roadgraph.WP2Lane.keys():
+                    tmp_lane=self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[(start_wp.road_id,start_wp.section_id,start_wp.lane_id)])
+                    if tmp_lane.id in self.roadgraph.Junction_Dict.keys():
+                        s,d=tmp_lane.course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
+                        if abs(d)<=0.5:
+                            possible_junctionlane.append(tmp_lane)
+            if not possible_junctionlane:
+                next_lane_id=vehicle.lane_id
+                junction_lane=cur_lane
             else:
-                # 说明从edge进入junction
-                cur_edge_id = self.roadgraph.get_lane_by_id(vehicle.lane_id).affiliated_section.affliated_edge.id
-                # for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
-                if not vehicle.available_lanes:
-                    for junction_lane in list(self.roadgraph.Junction_Dict.values()):
-                    # 找到cur_lane对应的junction_lane
-                        if self.roadgraph.WP2Lane[junction_lane.previous_lane] == vehicle.lane_id:
-                            vehicle.lane_id = junction_lane.id
-                            vehicle.cur_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,vehicle.state.s - cur_lane.length)
-                            vehicle.state.s, _ = self.roadgraph.get_lane_by_id(
-                                vehicle.lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
-                            vehicle.state.s = max(0, vehicle.state.s)
-                            break
-                else:
-                    for junction_lane in vehicle.available_lanes[cur_edge_id]["junction_lane"]:
-                        if self.roadgraph.WP2Lane[junction_lane.previous_lane] == vehicle.lane_id:
-                            vehicle.lane_id = junction_lane.id
-                            vehicle.cur_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,vehicle.state.s - cur_lane.length)
-                            vehicle.state.s, _ = self.roadgraph.get_lane_by_id(
-                                vehicle.lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
-                            vehicle.state.s = max(0, vehicle.state.s)
-                            break
-                
+                for junction_lane in possible_junctionlane:
+                    if junction_lane.id in vehicle.next_available_lanes:
+                        break
+                next_lane_id=junction_lane.id
+            next_s, _ = self.roadgraph.get_lane_by_id(next_lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
+            next_s = max(0, next_s)
+            next_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,next_s)
+            return next_lane_id,next_s,next_wp
 
-        if vehicle.cur_wp.is_junction:
-            # lane_id,cur_wp=self.roadgraph.get_laneID_by_s(vehicle.cur_wp.road_id, vehicle.cur_wp.lane_id,
-            #                                                             vehicle.state.s, self.carla_map)
-            lane_id=vehicle.lane_id
-            lane_id_by_carla,cur_wp=self.roadgraph.get_laneID_by_xy(vehicle.state.x, vehicle.state.y, self.carla_map)
-            if not cur_wp.is_junction:
-                lane_id=lane_id_by_carla
-            vehicle.lane_id,vehicle.cur_wp=lane_id,cur_wp
-
-            vehicle.state.s, _ = self.roadgraph.get_lane_by_id(vehicle.lane_id).course_spline.cartesian_to_frenet1D(
-                vehicle.state.x, vehicle.state.y)
-        else:
-            vehicle.lane_id, vehicle.cur_wp = self.roadgraph.get_laneID_by_xy(vehicle.state.x, vehicle.state.y, self.carla_map)
-            vehicle.state.s, _ = self.roadgraph.get_lane_by_id(vehicle.lane_id).course_spline.cartesian_to_frenet1D(
-                vehicle.state.x, vehicle.state.y)
+        elif not carla_wp.is_junction:
+            next_lane_id=self.roadgraph.WP2Lane[(carla_wp.road_id,carla_wp.section_id,carla_wp.lane_id)]
+            next_s, _ = self.roadgraph.get_lane_by_id(
+                               next_lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
+            next_s = max(0, next_s)
+            next_wp=carla_wp
+            return next_lane_id,next_s,next_wp
+                        
+        raise NotImplementedError 
 
     def putVehicleINFO(self):
         pass
@@ -307,19 +271,22 @@ class Model:
                 self.v_actors[vehicle.id].set_transform(carla.Transform(location=carla.Location(x=centerx, y=centery, z=0),
                                                    rotation=carla.Rotation(yaw=np.rad2deg(yaw))))
     def removeArrivedVeh(self):
+        needRemoved=[]
         for veh in self.vehicles:
-            if veh!=self.ego and veh.arrive_destination():
-                self.vehicles.remove(veh)
-                veh.actor.destroy()
-                del self.v_actors[veh.id]
+            if veh!=self.ego and (veh.arrive_destination() or not veh.actor.is_active):
+                needRemoved.append(veh)
                 continue
-            if veh!=self.ego and veh.actor.is_active:
+            elif veh!=self.ego and veh.actor.is_active:
                 cur_wp=self.carla_map.get_waypoint(veh.actor.get_location())
                 if cur_wp.lane_type!=carla.libcarla.LaneType.Driving:
-                    self.vehicles.remove(veh)
-                    veh.actor.destroy()
-                    del self.v_actors[veh.id]
+                    needRemoved.append(veh)
                     continue
+
+        for veh in needRemoved:
+            self.vehicles.remove(veh)
+            veh.actor.destroy()
+            del self.v_actors[veh.id]
+            del veh
 
     def destroy(self):
         # ------- close carla sync mode ------- #
@@ -337,12 +304,13 @@ class Model:
             #TODO：检查一下route的格式，解析他，设计ego_path的格式
             raise NotImplementedError
         
-        start_waypoint = self.createSpawnPoints(k=1)[0]
-        # wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
-        # while wp_isjunction:
-        #     start_waypoint = self.createSpawnPoints(k=1)[0]
-        #     wp_isjunction=self.carla_map.get_waypoint(start_waypoint.location).is_junction
-        actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
+        spawn_success=False
+        while not spawn_success:
+            start_waypoint = self.createSpawnPoints(k=1)[0]
+            actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
+            if actor:
+                spawn_success=True
+        self.world.tick()
         self.v_actors[actor.id]=actor
 
         start_waypoint=self.carla_map.get_waypoint(actor.get_location())

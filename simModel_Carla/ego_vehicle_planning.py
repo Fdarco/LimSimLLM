@@ -76,7 +76,8 @@ class LLMEgoPlanner:
 
             # 说明当前section上已经没有可行驶的lane了
             if ego_veh.behaviour == Behaviour.IDLE:
-                raise NoPathFoundError("There is no available lane for the vehicle to drive!")
+                # TODO:raise NoPathFoundError("There is no available lane for the vehicle to drive!")
+                pass
         return ego_veh.behaviour
     
     def plan(self,
@@ -169,8 +170,9 @@ class LLMEgoPlanner:
             left_lane = roadgraph.get_lane_by_id(current_lane.left_lane)
             if left_lane.length - ego_veh.state.s < 10:
                 # 如果长度太短，拼接left_lane和下一个lane
-                next_lane = roadgraph.get_lane_by_id(roadgraph.WP2Lane[left_lane.next_lane])
-                if next_lane:
+                next_lane_id=left_lane.next_lane
+                if next_lane_id:
+                    next_lane = roadgraph.get_lane_by_id(roadgraph.WP2Lane[next_lane_id])
                     left_lane.wp_list.extend(next_lane.wp_list)
                     left_lane.get_spline2D()
             path = self.lanechange_trajectory_generator(
