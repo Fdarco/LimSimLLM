@@ -8,6 +8,7 @@ from simModel_Carla.DataQueue import (
     CameraImages, ImageQueue, QAQueue, QuestionAndAnswer, RenderQueue
 )
 from simModel_Carla.Camera import nuScenesImageExtractor
+from simModel_Carla.MPGUI import GUI
 
 import carla
 from carla import Location, Rotation, Transform
@@ -552,8 +553,8 @@ if __name__=='__main__':
     model.ego.next_available_lanes =  model.ego.get_available_lanes(model.roadgraph)
     model.ego.trajectory=planner.plan(model.ego, model.roadgraph, None, model.timeStep)
     #TODO:GUI update
-    #gui = GUI(model)
-    #gui.start()
+    gui = GUI(model)
+    gui.start()
     model.world.debug.draw_point(model.ego.end_waypoint.transform.location, color=carla.Color(r=255, g=255, b=255), life_time=1000, size=1)
     while not model.tpEnd:
         model.moveStep()
