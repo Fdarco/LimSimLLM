@@ -1,8 +1,8 @@
 from Roadgraph import RoadGraph
 from Network_Structure import NormalLane, JunctionLane, AbstractLane
 import carla
-from utils.trajectory import State
 from trafficManager.common.vehicle import Behaviour
+from simModel_Carla.DataQueue import VRD
 from collections import deque
 from utils.trajectory import State, Trajectory
 from typing import List, Set
@@ -49,6 +49,39 @@ class Vehicle:
         self.next_available_lanes = set() # next available lanes, just include the available lanes in forward looking distance
 
         self.isAutoPilot=False
+
+        # store the last 10[s] x position for scenario rebuild
+        # x, y: position(two doubles) of the named vehicle (center) within the last step
+        self.xQ = deque(maxlen=100)
+        self.yQ = deque(maxlen=100)
+        self.yawQ = deque(maxlen=100)
+        self.speedQ = deque(maxlen=100)
+        self.accelQ = deque(maxlen=100)
+        self.laneIDQ = deque(maxlen=100)
+        self.lanePosQ = deque(maxlen=100)
+        self.routeIdxQ = deque(maxlen=100)
+
+    def exportVRD(self) -> VRD:
+        if self.trajectory and self.trajectory.xQueue:
+            return VRD(
+                self.id, self.state.x, self.state.y, self.state.yaw, None,
+                self.length, self.width,
+                self.trajectory.xQueue,
+                self.trajectory.yQueue
+            )
+        elif self.dbtrajectory and self.dbtrajectory.xQueue:
+            return VRD(
+                self.id, self.state.x, self.state.y, self.state.yaw, None,
+                self.length, self.width,
+                self.dbtrajectory.xQueue,
+                self.dbtrajectory.yQueue
+            )
+        else:
+            return VRD(
+                self.id, self.state.x, self.state.y, self.state.yaw, None,
+                self.length, self.width,
+                None, None
+            )
 
     def get_route(self,carla_map:carla.Map,roadgraph: RoadGraph):
         if not self.route:
@@ -202,3 +235,19 @@ class Vehicle:
         current_LC = carla.Location(x=self.state.x, y=self.state.y, z=self.state.yaw)
         destination_lc = carla.Location(x=self.end_waypoint.transform.location.x, y=self.end_waypoint.transform.location.y, z=self.end_waypoint.transform.location.z)
         return destination_lc.distance(current_LC) < 5.0
+
+
+class vehType:
+    def __init__(self, id: str) -> None:
+        self.id = id
+        self.maxAccel = None
+        self.maxDecel = None
+        self.maxSpeed = None
+        self.length = None
+        self.width = None
+        self.vclass = None
+
+    def __str__(self) -> str:
+        return 'ID: {},vClass: {}, maxAccel: {}, maxDecel: {:.2f}, maxSpeed: {:.2f}, length: {:.2f}, width: {:.2f}'.format(
+            self.id, self.vclass, self.maxAccel, self.maxDecel, self.maxSpeed, self.length, self.width
+        )

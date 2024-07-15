@@ -1,26 +1,34 @@
+from utils.load_config import load_config
+from simModel_Carla.DBBridge import DBBridge
 from RoadInfoGet import RoadInfoGet
 from Roadgraph import RoadGraph
-from vehicle import Vehicle
+from vehicle import Vehicle,vehType
 from ego_vehicle_planning import LLMEgoPlanner
-from dataclasses import field
+from simModel_Carla.DataQueue import (
+    CameraImages, ImageQueue, QAQueue, QuestionAndAnswer, RenderQueue
+)
+from simModel_Carla.Camera import nuScenesImageExtractor
 
 import carla
 from carla import Location, Rotation, Transform
 from agents.navigation.behavior_agent import BehaviorAgent
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 
-from utils.trajectory import State
-from utils.load_config import load_config
 import time, copy
 import numpy as np
+from math import sqrt
+import sqlite3
 import sys
 from typing import Dict, Union, Set, List
 import random
 import os
 import dill
+import pickle
+from dataclasses import field
+from datetime import datetime
 
 class Model:
-    def __init__(self,cfgFile: str=None,rouFile: str=None):
+    def __init__(self,cfgFile: str=None,rouFile: str=None,dataBase: str=None):
         # --------- config ---------#
         self.cfgFile:str=cfgFile
         self.cfg:Dict=load_config(self.cfgFile)
@@ -52,12 +60,33 @@ class Model:
         self.ego:Vehicle=None
         self.ego_id:int =-1
 
+        self.vehINAoI:Dict[int,Vehicle]={}
+        self.outOfAoI: Dict[int, Vehicle] = {}
+        self.firstCallVehInfoSet=set()
+
         self.timeStep:int = 0
         self.updateInterval=self.cfg['updateInterval']
         self.vehicleSpawnInterval=self.cfg['vehicleSpawnInterval']
         self.vehicleCheckRange=self.cfg['vehicleCheckRange']
         self.vehicleVisbleRange=self.cfg['vehicleVisibleRange']
         self.max_veh_num=self.cfg['max_veh_num']
+
+        if dataBase:
+            self.dataBase = dataBase
+        else:
+            self.dataBase = datetime.strftime(
+                datetime.now(), '%Y-%m-%d_%H-%M-%S') + '_egoTracking' + '.db'
+
+        if os.path.exists(self.dataBase):
+            os.remove(self.dataBase)
+        self.dbBridge = DBBridge(self.dataBase)
+        self.dbBridge.createTable()
+        self.simDescriptionCommit()
+        self.renderQueue = RenderQueue(5)
+        self.imageQueue = ImageQueue(50)
+        self.QAQ = QAQueue(5)
+
+        self.imageExtractor=nuScenesImageExtractor()
 
         # tpStart marks whether the trajectory planning is started,
         # when the ego car appears in the network, tpStart turns into 1.
@@ -83,7 +112,21 @@ class Model:
         self.world.tick()
 
         self.timeStep=0
-    
+
+    def simDescriptionCommit(self):
+        currTime = datetime.now()
+        insertQuery = '''INSERT INTO simINFO VALUES (?, ?, ?);'''
+        conn = sqlite3.connect(self.dataBase)
+        cur = conn.cursor()
+        cur.execute(
+            insertQuery,
+            (currTime, self.ego.id, '')
+        )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
     def check_and_load_mapcache(self):
         if os.path.exists(self.map_cache_path) and not self.cfg['rebuild_roadgraph']:
             with open(self.map_cache_path, 'rb') as f:
@@ -131,7 +174,6 @@ class Model:
         return self.timeStep%self.updateInterval==0
     def shouldSpawnVeh(self):
         return self.timeStep%self.vehicleSpawnInterval==0 and len(self.vehicles)<self.max_veh_num
-
     def checkSpawnPoint(self,spawn_point):
         for veh in self.vehicles:
             cur_lc=veh.actor.get_location()
@@ -164,8 +206,6 @@ class Model:
         else:
             return False
 
-
-
     def moveStep(self):
         """
         1.carla simulator tick
@@ -187,14 +227,14 @@ class Model:
             spawn_success=self.spawnVehicleRuntime()
             print('spawn_success:',spawn_success)
 
-
     def getSce(self):
         if not self.ego.arrive_destination():
             self.tpStart = 1
             self.removeArrivedVeh()
-            self.updateSurroundVeh()#更新AOI
+
+            self.getVehInfo(self.ego)
             for v in self.vehicles:
-                if v.actor.is_active:
+                if v.actor.is_active and v!=self.ego:
                     self.getVehInfo(v)
             self.putVehicleINFO()
         else:
@@ -203,14 +243,61 @@ class Model:
                 self.tpEnd = 1
 
     def getVehInfo(self,vehicle):
+        if vehicle.id not in self.firstCallVehInfoSet:
+            self.firstCallVehInfoSet.add(vehicle.id)
+            vtins=vehType(str(vehicle.id))
+            vtins.maxAccel=5
+            vtins.maxDecel=5
+            vtins.maxSpeed=vehicle.actor.get_speed_limit()
+            vtins.length=vehicle.length
+            vtins.width=vehicle.width
+            vtins.vclass=vehicle.actor.type_id
+            routes = ' '.join(vehicle.routes)
+            self.commitVehicleInfo(str(vehicle.id), vtins, routes)
+
         actor=self.v_actors[vehicle.id]
 
-        vehicle.state.x = actor.get_location().x
-        vehicle.state.y = actor.get_location().y
-        vehicle.state.yaw = np.deg2rad(actor.get_transform().rotation.yaw)
+        x=vehicle.state.x = actor.get_location().x
+        y=vehicle.state.y = actor.get_location().y
+        yaw=vehicle.state.yaw = np.deg2rad(actor.get_transform().rotation.yaw)
+
+        #whether the vehicle is in the AoI
+        ex,ey=self.ego.state.x,self.ego.state.y
+        if sqrt(pow((ex - x), 2) + pow((ey - y), 2)) <= self.cfg['deArea']:
+            if not vehicle.id in self.vehINAoI.keys():
+                self.vehINAoI[vehicle.id]=vehicle
+            if vehicle.id in self.outOfAoI.keys():
+                del self.outOfAoI[vehicle.id]
+        else:
+            if vehicle.id in self.vehINAoI.keys():
+                del self.vehINAoI[vehicle.id]
+            if not vehicle.id in self.outOfAoI.keys():
+                self.outOfAoI[vehicle.id] = vehicle
 
         vehicle.lane_id,vehicle.state.s,vehicle.cur_wp=self.localization(vehicle)
-    
+
+        #get route_idx
+        lane=self.roadgraph.get_lane_by_id(lane_id=vehicle.lane_id)
+        try:
+            #lane is normal_lane
+            road_id=lane.affiliated_section.affliated_edge.id
+        except:
+            #lane is junction_lane
+            road_id=lane.id.split('-')[0]
+        if road_id in vehicle.route:
+            route_idx=vehicle.route.index(road_id)
+        else:
+            route_idx=0
+
+        vehicle.xQ.append(x)
+        vehicle.yQ.append(y)
+        vehicle.yawQ.append(yaw)
+        vehicle.speedQ.append(vehicle.actor.get_velocity())
+        vehicle.accelQ.append(vehicle.actor.get_acceleration())
+        vehicle.routeIdxQ.append(route_idx)
+        vehicle.laneIDQ.append(vehicle.lane_id)
+        vehicle.lanePosQ.append(vehicle.state.s)
+
     def localization(self,vehicle):
         cur_lane = self.roadgraph.get_lane_by_id(vehicle.lane_id)
         cur_wp=vehicle.cur_wp if vehicle.cur_wp else self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y))
@@ -251,12 +338,71 @@ class Model:
                         
         raise NotImplementedError 
 
+    def commitFrameInfo(self, vid: int, vtag: str, veh: Vehicle):
+        self.dbBridge.putData(
+            'frameINFO',
+            (
+                self.timeStep, vid, vtag, veh.state.x, veh.state.y, veh.state.yaw, veh.speedQ[-1],
+                veh.accelQ[-1], veh.lane_id, veh.state.s, veh.routeIdxQ[-1]
+            )
+        )
+
+    def commitVehicleInfo(self, vid: str, vtins: vehType, routes: str):
+        self.dbBridge.putData(
+            'vehicleINFO',
+            (
+                vid, vtins.length, vtins.width, vtins.maxAccel,
+                vtins.maxDecel, vtins.maxSpeed, vtins.id, routes
+            )
+        )
+
     def putVehicleINFO(self):
-        pass
+        self.commitFrameInfo(self.ego.id, 'ego', self.ego)
+        for v1 in self.vehINAoI.values():
+            self.commitFrameInfo(v1.id, 'AoI', v1)
+        for v2 in self.outOfAoI.values():
+            self.commitFrameInfo(v2.id, 'outOfAoI', v2)
+
     def putRenderData(self):
-        pass
+        if self.tpStart:
+            roadgraphRenderData, VRDDict = self.roadgraph.exportRenderData(self.ego,self.vehINAoI,self.outOfAoI)
+            self.renderQueue.put((roadgraphRenderData, VRDDict))
+
     def putCARLAImage(self):
-        pass
+        self.imageExtractor.setCameras(self.ego,world)
+        ci = self.imageExtractor.getCameraImages()
+        if ci:
+            ci.resizeImage(560, 315)
+            self.imageQueue.put(ci)
+            self.dbBridge.putData(
+                'imageINFO',
+                (
+                    self.timeStep,
+                    sqlite3.Binary(pickle.dumps(ci.CAM_FRONT)),
+                    sqlite3.Binary(pickle.dumps(ci.CAM_FRONT_RIGHT)),
+                    sqlite3.Binary(pickle.dumps(ci.CAM_FRONT_LEFT)),
+                    sqlite3.Binary(pickle.dumps(ci.CAM_BACK_LEFT)),
+                    sqlite3.Binary(pickle.dumps(ci.CAM_BACK)),
+                    sqlite3.Binary(pickle.dumps(ci.CAM_BACK_RIGHT))
+                )
+            )
+
+
+    def getCARLAImage(
+            self, start_frame: int, steps: int = 1
+    ) -> List[CameraImages]:
+        return self.imageQueue.get(start_frame, steps)
+
+    def putQA(self, QA: QuestionAndAnswer):
+        self.QAQ.put(QA)
+        self.dbBridge.putData(
+            'QAINFO',
+            (
+                self.timeStep, QA.description, QA.navigation,
+                QA.actions, QA.few_shots, QA.response,
+                QA.prompt_tokens, QA.completion_tokens, QA.total_tokens, QA.total_time, QA.choose_action
+            )
+        )
     def updateSurroundVeh(self):
         #1.记录每个车是否在AOI内
         pass
@@ -286,6 +432,10 @@ class Model:
             self.vehicles.remove(veh)
             veh.actor.destroy()
             del self.v_actors[veh.id]
+            if veh.id in self.vehINAoI.keys():
+                del self.vehINAoI[veh.id]
+            if veh.id in self.outOfAoI.keys():
+                del self.outOfAoI[veh.id]
             del veh
 
     def destroy(self):
@@ -390,6 +540,8 @@ if __name__=='__main__':
     config_name='./simModel_Carla/example_config.yaml'
     random.seed(112)
 
+    stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')
+    database = 'results/' + stringTimestamp + '.db'
 
     model=Model(cfgFile=config_name)
     planner = LLMEgoPlanner()

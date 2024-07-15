@@ -9,6 +9,7 @@ from abc import ABC
 from typing import Dict, Union, Set, List
 from utils.cubic_spline import Spline2D
 from functools import cached_property
+import numpy as np
 
 RESOLUTION = 0.5
 
@@ -104,7 +105,19 @@ class AbstractLane(ABC):
             
         xy_unzip = list(zip(*xy_list))
         self.course_spline = Spline2D(xy_unzip[0], xy_unzip[1])
-    
+
+    def getPlotElem(self):
+        s = np.linspace(0, self.course_spline.s[-1], num=50)
+        self.center_line = [
+            self.course_spline.calc_position(si) for si in s
+        ]
+        self.left_bound = [
+            self.course_spline.frenet_to_cartesian1D(si, self.width / 2) for si in s
+        ]
+        self.right_bound = [
+            self.course_spline.frenet_to_cartesian1D(si, -self.width / 2) for si in s
+        ]
+
 @dataclass
 class NormalLane(AbstractLane):
     """
@@ -169,7 +182,7 @@ class NormalLane(AbstractLane):
     
     def wp_equal(self, wp: carla.Waypoint) -> bool:
         return self.end_wp.road_id == wp.road_id and self.end_wp.section_id == wp.section_id and self.end_wp.lane_id == wp.lane_id
-    
+
     def __repr__(self) -> str:
         # return f"NormalLane(id={self.id}, width = {self.width})"
         return f"NormalLane(id={self.id})"

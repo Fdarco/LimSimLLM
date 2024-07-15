@@ -9,6 +9,7 @@ from abc import ABC
 from typing import Dict, Union, Set, List
 import logging
 from Network_Structure import Edge, Section, NormalLane, JunctionLane
+from simModel_Carla.DataQueue import (ERD,JLRD,LRD,RGRD)
 from agents.navigation.local_planner import RoadOption
 
 RESOLUTION = 0.5
@@ -290,6 +291,37 @@ class RoadGraph:
                     lane.wp_list=wp_list
                     lane.start_wp=dict_to_wp(lane.start_wp) if dict_to_wp(lane.start_wp)!=None else lane.wp_list[0]
                     lane.end_wp=dict_to_wp(lane.end_wp) if dict_to_wp(lane.end_wp)!=None else lane.wp_list[-1]
+
+    def exportRenderData(self,ego,vehINAoI,outOfAoI):
+        roadgraphRenderData = RGRD()
+
+        for eid,edge in self.Edges.items():
+            lane_count=0
+            for section_id in edge.section_list:
+                section=self.Sections[section_id]
+                for _,lane in section.lanes.items():
+                    roadgraphRenderData.lanes[lane.id] = LRD(
+                        lane.id, lane.left_bound, lane.right_bound)
+                    lane_count+=1
+            roadgraphRenderData.edges[eid] = ERD(eid, lane_count)
+
+        #TODO:需要读取交通信号灯，并将其和junctionlane关联起来
+        for jid,junction_lane in self.Junction_Dict:
+            try:
+                roadgraphRenderData.junction_lanes[jid] = JLRD(
+                    jid, junction_lane.center_line, 'g'
+                )
+            except AttributeError:
+                continue
+
+        # export vehicles' information using dict.
+        VRDDict = {
+            'egoCar': [ego.exportVRD(), ],
+            'carInAoI': [av.exportVRD() for av in vehINAoI.values()],
+            'outOfAoI': [sv.exportVRD() for sv in outOfAoI.values()]
+        }
+
+        return roadgraphRenderData, VRDDict
 
 
 
