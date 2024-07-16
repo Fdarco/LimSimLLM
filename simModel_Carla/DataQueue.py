@@ -50,7 +50,7 @@ class RGRD:
     edges: Dict[str, ERD] = field(default_factory=dict)
 
     def get_lane_by_id(self, lid: str) -> Union[LRD, JLRD]:
-        if lid[0] == ':':
+        if lid in self.junction_lanes.keys():
             return self.junction_lanes[lid]
         else:
             return self.lanes[lid]

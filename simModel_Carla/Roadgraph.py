@@ -299,20 +299,31 @@ class RoadGraph:
             lane_count=0
             for section_id in edge.section_list:
                 section=self.Sections[section_id]
-                for _,lane in section.lanes.items():
-                    roadgraphRenderData.lanes[lane.id] = LRD(
-                        lane.id, lane.left_bound, lane.right_bound)
+                for _,lane_id in section.lanes.items():
+                    lane=self.NormalLane_Dict[lane_id]
+
+                    try:
+                        roadgraphRenderData.lanes[lane.id] = LRD(
+                            lane.id, lane.left_bound, lane.right_bound)
+                    except AttributeError:
+                        lane.getPlotElem()
+                        roadgraphRenderData.lanes[lane.id] = LRD(
+                            lane.id, lane.left_bound, lane.right_bound)
+                        
                     lane_count+=1
             roadgraphRenderData.edges[eid] = ERD(eid, lane_count)
 
         #TODO:需要读取交通信号灯，并将其和junctionlane关联起来
-        for jid,junction_lane in self.Junction_Dict:
+        for jid,junction_lane in self.Junction_Dict.items():
             try:
                 roadgraphRenderData.junction_lanes[jid] = JLRD(
                     jid, junction_lane.center_line, 'g'
                 )
             except AttributeError:
-                continue
+                junction_lane.getPlotElem()
+                roadgraphRenderData.junction_lanes[jid] = JLRD(
+                    jid, junction_lane.center_line, 'g'
+                )
 
         # export vehicles' information using dict.
         VRDDict = {

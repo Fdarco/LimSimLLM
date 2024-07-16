@@ -30,7 +30,7 @@ class CAMActor:
         cam_bp.set_attribute('fov', fov)
         # cam_bp.set_attribute('sensor_tick', '0.1')
         self.cam = world.spawn_actor(
-            cam_bp, transform, attach_to=vehicle
+            cam_bp, transform, attach_to=vehicle.actor
         )
         self.cam.listen(self.process)
         self.max_size = max_size
@@ -127,7 +127,7 @@ class nuScenesImageExtractor:
             for k, v in self.cameraInfo.items():
                 if not v['record']:
                     self.cameras[k] = CAMActor(
-                        world,k, self, v['transform'], v['fov'], vehicle
+                        world,k,v['transform'],v['fov'],vehicle
                     )
                     v['record'] = True
                 else:

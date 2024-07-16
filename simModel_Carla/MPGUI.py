@@ -11,7 +11,6 @@ from rich import print
 from simModel_Carla.DataQueue import (
     ERD, JLRD, LRD, RGRD, VRD, CameraImages, QuestionAndAnswer,
 )
-from simModel_Carla.Model import Model
 from utils.simBase import CoordTF
 
 
@@ -53,19 +52,12 @@ def generateDefaultImage(
 
 class GUI(Process):
     def __init__(
-        self, model: Model,
+        self, model,
     ) -> None:
         super().__init__()
         self.renderQueue = model.renderQueue
         self.imageQueue = model.imageQueue
         self.QAQ = model.QAQ
-        if model.netBoundary:
-            self.netBoundary = model.netBoundary
-        else:
-            raise SequenceError(
-                'Class `GUI` must be initialized after `model.start()`.'
-            )
-
         self.zoom_speed: float = 1.0
         self.is_dragging: bool = False
         self.old_offset = (0, 0)
@@ -183,18 +175,6 @@ class GUI(Process):
         dpg.set_item_width('ResponseWindow', 470)
         dpg.set_item_height('ResponseWindow', 800)
         dpg.set_item_pos('ResponseWindow', (1300, 380))
-
-    def drawMainWindowWhiteBG(self):
-        pmin, pmax =  self.netBoundary
-        centerx = (pmin[0] + pmax[0]) / 2
-        centery = (pmin[1] + pmax[1]) / 2
-        dpg.draw_rectangle(
-            self.ctf.dpgCoord(pmin[0], pmin[1], centerx, centery),
-            self.ctf.dpgCoord(pmax[0], pmax[1], centerx, centery),
-            thickness=0,
-            fill=(255, 255, 255),
-            parent="CanvasBG"
-        )
 
     def mouse_down(self):
         if not self.is_dragging:
@@ -317,27 +297,56 @@ class GUI(Process):
                 left_bound_tf, color=(0, 0, 0, 100), 
                 thickness=2, parent=node
             )
+            right_bound_tf = self.get_line_tf(lrd.right_bound, ex, ey)
+            dpg.draw_polyline(
+                right_bound_tf, color=(0, 0, 0, 100), 
+                thickness=2, parent=node
+            )
+
 
     def drawEdge(self, node, erd: ERD, rgrd: RGRD, ex, ey):
-        for lane_index in range(erd.num_lanes):
-            lane_id = erd.id + '_' + str(lane_index)
-            lrd = rgrd.get_lane_by_id(lane_id)
-            flag = 0b00
-            if  lane_index == 0:
-                flag += 1
-                right_bound_tf = self.get_line_tf(lrd.right_bound, ex, ey)
-            if lane_index == erd.num_lanes - 1:
-                flag += 2
-                left_bound_tf = self.get_line_tf(lrd.left_bound, ex, ey)
-            self.drawLane(node, lrd, ex, ey, flag)
+        right_bound_tf=None
+        max_lid=0
+        for lane_id,lrd in rgrd.lanes.items():
+            edge_id=lane_id.split('-')[0]
+            if edge_id==erd.id:
+                flag=0b00
+                lid=lane_id.split('-')[2]
+                
+                max_lid=max(int(lid),max_lid)
 
-        left_bound_tf.reverse()
-        right_bound_tf.extend(left_bound_tf)
-        right_bound_tf.append(right_bound_tf[0])
-        dpg.draw_polygon(
-            right_bound_tf, color=(0, 0, 0),
-            thickness=2, fill=(0, 0, 0, 30), parent=node
-        )
+                if lid=='0':
+                    flag += 1
+                    if not right_bound_tf:
+                        right_bound_tf = self.get_line_tf(lrd.right_bound, ex, ey)
+                    else:
+                        right_bound_tf = right_bound_tf+self.get_line_tf(lrd.right_bound, ex, ey)
+
+                self.drawLane(node, lrd, ex, ey, flag)
+
+        left_bound_tf=None
+        for lane_id,lrd in rgrd.lanes.items():
+            edge_id=lane_id.split('-')[0]
+            lid=lane_id.split('-')[2]
+
+            if edge_id==erd.id and lid==str(max_lid):
+                flag=0b00
+                flag=flag+2
+                if not left_bound_tf:
+                    left_bound_tf = self.get_line_tf(lrd.left_bound, ex, ey)
+                else:
+                    left_bound_tf = left_bound_tf + self.get_line_tf(lrd.left_bound, ex, ey)
+                self.drawLane(node, lrd, ex, ey, flag)
+                
+
+        # left_bound_tf.reverse()
+        # right_bound_tf.extend(left_bound_tf)
+        # right_bound_tf.append(right_bound_tf[0])
+        # dpg.draw_polygon(
+        #     right_bound_tf, color=(0, 0, 0),
+        #     thickness=2, fill=(0, 0, 0, 30), parent=node
+        # )
+
 
     def drawJunctionLane(self, node, jlrd: JLRD, ex, ey):
         if jlrd.center_line:
@@ -467,7 +476,6 @@ class GUI(Process):
         self.resize_windows()
         self.ctf = CoordTF(120, 'BEVWindow')
         dpg.show_viewport()
-        self.drawMainWindowWhiteBG()
         while dpg.is_dearpygui_running():
             self.render_loop()
             dpg.render_dearpygui_frame()

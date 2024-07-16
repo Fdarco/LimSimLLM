@@ -82,7 +82,6 @@ class Model:
             os.remove(self.dataBase)
         self.dbBridge = DBBridge(self.dataBase)
         self.dbBridge.createTable()
-        self.simDescriptionCommit()
         self.renderQueue = RenderQueue(5)
         self.imageQueue = ImageQueue(50)
         self.QAQ = QAQueue(5)
@@ -105,6 +104,8 @@ class Model:
 
         self.ego,self.ego_id=self.initEgo()
         self.vehicles.append(self.ego)
+
+        self.simDescriptionCommit()
         # --------- carla sync mode ---------- #
         settings = self.world.get_settings()
         settings.synchronous_mode = True
@@ -253,7 +254,7 @@ class Model:
             vtins.length=vehicle.length
             vtins.width=vehicle.width
             vtins.vclass=vehicle.actor.type_id
-            routes = ' '.join(vehicle.routes)
+            routes = ' '.join(vehicle.route)
             self.commitVehicleInfo(str(vehicle.id), vtins, routes)
 
         actor=self.v_actors[vehicle.id]
@@ -293,8 +294,8 @@ class Model:
         vehicle.xQ.append(x)
         vehicle.yQ.append(y)
         vehicle.yawQ.append(yaw)
-        vehicle.speedQ.append(vehicle.actor.get_velocity())
-        vehicle.accelQ.append(vehicle.actor.get_acceleration())
+        vehicle.speedQ.append(vehicle.actor.get_velocity().length())
+        vehicle.accelQ.append(vehicle.actor.get_acceleration().length())
         vehicle.routeIdxQ.append(route_idx)
         vehicle.laneIDQ.append(vehicle.lane_id)
         vehicle.lanePosQ.append(vehicle.state.s)
@@ -370,7 +371,7 @@ class Model:
             self.renderQueue.put((roadgraphRenderData, VRDDict))
 
     def putCARLAImage(self):
-        self.imageExtractor.setCameras(self.ego,world)
+        self.imageExtractor.setCameras(self.ego,self.world)
         ci = self.imageExtractor.getCameraImages()
         if ci:
             ci.resizeImage(560, 315)
@@ -570,6 +571,6 @@ if __name__=='__main__':
         model.updateVeh()
 
     model.destroy()
-    # gui.terminate()
-    # gui.join()
+    gui.terminate()
+    gui.join()
 

@@ -47,6 +47,7 @@ class Vehicle:
 
         self.trajectory: Trajectory = None # vehicle trajectory
         self.next_available_lanes = set() # next available lanes, just include the available lanes in forward looking distance
+        self.dbtrajectory =None
 
         self.isAutoPilot=False
 
