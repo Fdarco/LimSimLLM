@@ -94,6 +94,19 @@ class Vehicle:
         self.state.s, _=roadgraph.get_lane_by_id(self.lane_id).course_spline.cartesian_to_frenet1D(
             self.state.x, self.state.y)
 
+    def export2Dict(self,roadgraph):
+        if not self.available_lanes:
+            self.available_lanes=roadgraph.get_all_available_lanes(self.route,self.end_waypoint)
+        return {
+            'id': self.id,"vTypeID":self.id,
+            'xQ': self.xQ, 'yQ': self.yQ, 'yawQ': self.yawQ,
+            'speedQ': self.speedQ, 'accelQ': self.accelQ,
+            'laneIDQ': self.laneIDQ, 'lanePosQ': self.lanePosQ,
+            'availableLanes': self.get_available_lanes(roadgraph),
+            'routeIdxQ': self.routeIdxQ, 'width': self.width,
+            'length':self.length
+        }
+
     def get_available_lanes(self, roadgraph: RoadGraph) -> Set[str]:
         """根据当前车辆的lane以及visiable_distance，获取当前车辆可见范围内的lane信息(PS: 只考虑到本edge和下一个edge的情况)
 

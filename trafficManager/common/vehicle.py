@@ -309,7 +309,7 @@ def create_vehicle(vehicle_info: Dict, roadgraph: RoadGraph, vtype_info: Any,
         vehicle_id=vehicle_info["id"],
         init_state=init_state,
         lane_id=lane_id,
-        target_speed=30.0 / 3.6,
+        target_speed=30.0 / 3.6,#TODO:why
         behaviour=Behaviour.KL,
         vtype=vtype,
         length=vtype_info.length,

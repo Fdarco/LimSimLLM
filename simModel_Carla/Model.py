@@ -9,6 +9,9 @@ from simModel_Carla.DataQueue import (
 )
 from simModel_Carla.Camera import nuScenesImageExtractor
 from simModel_Carla.MPGUI import GUI
+from trafficManager.traffic_manager_carla import TrafficManager
+from trafficManager.common.vehicle import Behaviour
+
 
 import carla
 from carla import Location, Rotation, Transform
@@ -34,6 +37,7 @@ class Model:
         self.cfgFile:str=cfgFile
         self.cfg:Dict=load_config(self.cfgFile)
         self.rouFile=rouFile
+        self.sim_mode: str = 'RealTime'
 
         # --------- init carla and roadgraph --------- #
         self.client = carla.Client('localhost', 2000)
@@ -63,7 +67,7 @@ class Model:
 
         self.vehINAoI:Dict[int,Vehicle]={}
         self.outOfAoI: Dict[int, Vehicle] = {}
-        self.firstCallVehInfoSet=set()
+        self.allvTypes:Dict[int,vehType]={}
 
         self.timeStep:int = 0
         self.updateInterval=self.cfg['updateInterval']
@@ -245,8 +249,7 @@ class Model:
                 self.tpEnd = 1
 
     def getVehInfo(self,vehicle):
-        if vehicle.id not in self.firstCallVehInfoSet:
-            self.firstCallVehInfoSet.add(vehicle.id)
+        if vehicle.id not in self.allvTypes:
             vtins=vehType(str(vehicle.id))
             vtins.maxAccel=5
             vtins.maxDecel=5
@@ -256,6 +259,7 @@ class Model:
             vtins.vclass=vehicle.actor.type_id
             routes = ' '.join(vehicle.route)
             self.commitVehicleInfo(str(vehicle.id), vtins, routes)
+            self.allvTypes[vehicle.id]=vtins
 
         actor=self.v_actors[vehicle.id]
 
@@ -405,9 +409,6 @@ class Model:
                 QA.prompt_tokens, QA.completion_tokens, QA.total_tokens, QA.total_time, QA.choose_action
             )
         )
-    def updateSurroundVeh(self):
-        #1.记录每个车是否在AOI内
-        pass
     def updateVeh(self):
         """
         update vehicles' actions in carla
@@ -537,6 +538,31 @@ class Model:
         randomSpawnPoints=random.sample(spawn_points,k)
         return randomSpawnPoints
 
+    @property
+    def vehiclesDict(self)->Dict:
+        vehiclesDict={}
+        for veh in self.vehicles:
+            vehiclesDict[veh.id]=veh
+        return vehiclesDict
+
+    def setTrajectories(self,trajectories):
+        vehiclesDict=self.vehiclesDict
+        for k, v in trajectories.items():
+            if k == self.ego_id:
+                self.ego.trajectory = v
+            else:
+                veh = vehiclesDict[k]
+                veh.trajectory = v
+
+    def exportSce(self):
+        if not self.tpStart:
+            return None,None
+        vehicles = {
+            'egoCar': self.ego.export2Dict(self.netInfo),
+            'carInAoI': [av.export2Dict(self.netInfo) for av in self.vehINAoI.values()],
+            'outOfAoI': [sv.export2Dict(self.netInfo) for sv in self.outOfAoI.values()]
+        }
+        return self.roadgraph,vehicles
 
 if __name__=='__main__':
     config_name='./simModel_Carla/example_config.yaml'
@@ -545,25 +571,39 @@ if __name__=='__main__':
     stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')
     database = 'results/' + stringTimestamp + '.db'
 
-    model=Model(cfgFile=config_name)
-    planner = LLMEgoPlanner()
-    
+    model=Model(cfgFile=config_name,dataBase=database)
+    # planner = LLMEgoPlanner()
+    planner = TrafficManager(model)
+
     model.start()
     model.runAutoPilot()
-    model.ego.available_lanes = model.roadgraph.get_all_available_lanes(model.ego.route, model.ego.end_waypoint)
-    model.ego.next_available_lanes =  model.ego.get_available_lanes(model.roadgraph)
-    model.ego.trajectory=planner.plan(model.ego, model.roadgraph, None, model.timeStep)
-    #TODO:GUI update
+
+    # model.ego.available_lanes = model.roadgraph.get_all_available_lanes(model.ego.route, model.ego.end_waypoint)
+    # model.ego.next_available_lanes =  model.ego.get_available_lanes(model.roadgraph)
+    # model.ego.trajectory=planner.plan(model.ego, model.roadgraph, None, model.timeStep)
+
     gui = GUI(model)
     gui.start()
-    model.world.debug.draw_point(model.ego.end_waypoint.transform.location, color=carla.Color(r=255, g=255, b=255), life_time=1000, size=1)
+
     while not model.tpEnd:
-        model.moveStep()
+        model.moveStep()#TODO:add collisioncheck
         if model.shouldUpdate():
-            model.ego.next_available_lanes = model.ego.get_available_lanes(model.roadgraph)
-            model.ego.trajectory = planner.plan(model.ego, model.roadgraph, None, model.timeStep)#TODO:采用model方法set_trajectory来给轨迹赋值
+
+            roadgraph, vehicles = model.exportSce()
+
+            # model.ego.next_available_lanes = model.ego.get_available_lanes(model.roadgraph)
+            # trajectory = planner.plan(model.ego, model.roadgraph, None, model.timeStep)
+            # trajectory={model.ego_id:trajectory}
+
+            trajectories = planner.plan(
+                model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=False
+            )
+
+            model.setTrajectories(trajectories)
+
             print(model.ego.lane_id)
             print(model.ego.behaviour)
+
             world=model.world
             for state in model.ego.trajectory.states:
                 world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
