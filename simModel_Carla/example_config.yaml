@@ -4,6 +4,7 @@ rebuild_roadgraph: False
 updateInterval: 10
 deArea: 50
 max_veh_num: 20
+carlaImage: False
 vehicleSpawnInterval: 50
 vehicleVisibleRange: 100
 vehicleCheckRange: 50

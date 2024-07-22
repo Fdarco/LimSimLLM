@@ -47,6 +47,7 @@ class Model:
         self.carla_map = self.world.get_map()
         self.topology = self.carla_map.get_topology()
         self.spectator = self.world.get_spectator()
+        self.carla_tm=None
 
         self.roadgraph = RoadGraph()
         self.map_cache_path=os.path.join(os.getcwd(),'simModel_Carla','map_cache', f"{self.cfg['map_name']}.pkl")
@@ -156,8 +157,9 @@ class Model:
 
         #route会被改变，由carla的routeplanner
         grp = GlobalRoutePlanner(self.carla_map, 0.5)
-        route_carla = grp.trace_route(vehicle.start_waypoint.transform.location, vehicle.end_waypoint.transform.location)
+        route_carla = grp.trace_route(vehicle.actor.get_location(), vehicle.end_waypoint.transform.location)
         vehicle.route = self.roadgraph.get_route_edge(route_carla)
+        vehicle.available_lanes=self.roadgraph.get_all_available_lanes(vehicle.route,vehicle.end_waypoint)
 
         route_carla=[wp[0].transform.location for wp in route_carla]
 
@@ -171,10 +173,6 @@ class Model:
         for vehicle in self.vehicles:
             if vehicle!=self.ego and not vehicle.isAutoPilot:
                 self.setAutoPilot(vehicle)
-
-        for id, actor in self.v_actors.items():
-            if id != self.ego_id:
-                actor.set_autopilot()
 
     def shouldUpdate(self):
         return self.timeStep%self.updateInterval==0
@@ -198,7 +196,8 @@ class Model:
         if actor:
             self.v_actors[actor.id] = actor
 
-            start_waypoint = self.carla_map.get_waypoint(actor.get_location())
+            # start_waypoint = self.carla_map.get_waypoint(actor.get_location())
+            start_waypoint=self.carla_map.get_waypoint(spawn_point.location)
             route, end_waypoint = self.randomRoute(start_waypoint)
 
             vehicle = Vehicle(actor,start_waypoint, end_waypoint, self.vehicleVisbleRange,route)
@@ -225,7 +224,8 @@ class Model:
         if self.shouldUpdate():
             self.getSce()
             self.putRenderData()
-            self.putCARLAImage()
+            if self.cfg['carlaImage']:
+                self.putCARLAImage()
             if not self.tpStart:
                 self.tpStart = 1
 
@@ -242,6 +242,7 @@ class Model:
             for v in self.vehicles:
                 if v.actor.is_active and v!=self.ego:
                     self.getVehInfo(v)
+
             self.putVehicleINFO()
         else:
             if self.tpStart:
@@ -268,17 +269,18 @@ class Model:
         yaw=vehicle.state.yaw = np.deg2rad(actor.get_transform().rotation.yaw)
 
         #whether the vehicle is in the AoI
-        ex,ey=self.ego.state.x,self.ego.state.y
-        if sqrt(pow((ex - x), 2) + pow((ey - y), 2)) <= self.cfg['deArea']:
-            if not vehicle.id in self.vehINAoI.keys():
-                self.vehINAoI[vehicle.id]=vehicle
-            if vehicle.id in self.outOfAoI.keys():
-                del self.outOfAoI[vehicle.id]
-        else:
-            if vehicle.id in self.vehINAoI.keys():
-                del self.vehINAoI[vehicle.id]
-            if not vehicle.id in self.outOfAoI.keys():
-                self.outOfAoI[vehicle.id] = vehicle
+        if vehicle.id !=self.ego_id:
+            ex,ey=self.ego.state.x,self.ego.state.y
+            if sqrt(pow((ex - x), 2) + pow((ey - y), 2)) <= self.cfg['deArea']:
+                if not vehicle.id in self.vehINAoI.keys():
+                    self.vehINAoI[vehicle.id]=vehicle
+                if vehicle.id in self.outOfAoI.keys():
+                    del self.outOfAoI[vehicle.id]
+            else:
+                if vehicle.id in self.vehINAoI.keys():
+                    del self.vehINAoI[vehicle.id]
+                if not vehicle.id in self.outOfAoI.keys():
+                    self.outOfAoI[vehicle.id] = vehicle
 
         vehicle.lane_id,vehicle.state.s,vehicle.cur_wp=self.localization(vehicle)
 
@@ -319,7 +321,7 @@ class Model:
                     tmp_lane=self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[(start_wp.road_id,start_wp.section_id,start_wp.lane_id)])
                     if tmp_lane.id in self.roadgraph.Junction_Dict.keys():
                         s,d=tmp_lane.course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
-                        if abs(d)<=0.5:
+                        if abs(d)<=2:
                             possible_junctionlane.append(tmp_lane)
             if not possible_junctionlane:
                 next_lane_id=vehicle.lane_id
@@ -415,10 +417,13 @@ class Model:
         """
         for vehicle in self.vehicles:
             if vehicle.trajectory:
+                if self.carla_tm:
+                    vehicle.actor.set_autopilot(False)
+                    vehicle.isAutoPilot=False
                 vehicle.state=vehicle.trajectory.states[0]
                 centerx, centery, yaw, speed, accel = vehicle.trajectory.pop_last_state()
                 self.v_actors[vehicle.id].set_transform(carla.Transform(location=carla.Location(x=centerx, y=centery, z=0),
-                                                   rotation=carla.Rotation(yaw=np.rad2deg(yaw))))
+                                                   rotation=carla.Rotation(roll=0,pitch=0,yaw=np.rad2deg(yaw))))
     def removeArrivedVeh(self):
         needRemoved=[]
         for veh in self.vehicles:
@@ -553,14 +558,22 @@ class Model:
             else:
                 veh = vehiclesDict[k]
                 veh.trajectory = v
+        for k,veh in vehiclesDict.items():
+            if k in trajectories.keys():
+                continue
+            else:
+                veh.trajectories=None
+                if self.carla_tm:
+                    self.setAutoPilot(veh)
+                
 
     def exportSce(self):
         if not self.tpStart:
             return None,None
         vehicles = {
-            'egoCar': self.ego.export2Dict(self.netInfo),
-            'carInAoI': [av.export2Dict(self.netInfo) for av in self.vehINAoI.values()],
-            'outOfAoI': [sv.export2Dict(self.netInfo) for sv in self.outOfAoI.values()]
+            'egoCar': self.ego.export2Dict(self.roadgraph),
+            'carInAoI': [av.export2Dict(self.roadgraph) for av in self.vehINAoI.values()],
+            'outOfAoI': [sv.export2Dict(self.roadgraph) for sv in self.outOfAoI.values()]
         }
         return self.roadgraph,vehicles
 
@@ -572,15 +585,11 @@ if __name__=='__main__':
     database = 'results/' + stringTimestamp + '.db'
 
     model=Model(cfgFile=config_name,dataBase=database)
-    # planner = LLMEgoPlanner()
+    egoplanner = LLMEgoPlanner()
     planner = TrafficManager(model)
 
     model.start()
     model.runAutoPilot()
-
-    # model.ego.available_lanes = model.roadgraph.get_all_available_lanes(model.ego.route, model.ego.end_waypoint)
-    # model.ego.next_available_lanes =  model.ego.get_available_lanes(model.roadgraph)
-    # model.ego.trajectory=planner.plan(model.ego, model.roadgraph, None, model.timeStep)
 
     gui = GUI(model)
     gui.start()
@@ -591,13 +600,18 @@ if __name__=='__main__':
 
             roadgraph, vehicles = model.exportSce()
 
-            # model.ego.next_available_lanes = model.ego.get_available_lanes(model.roadgraph)
-            # trajectory = planner.plan(model.ego, model.roadgraph, None, model.timeStep)
-            # trajectory={model.ego_id:trajectory}
-
             trajectories = planner.plan(
-                model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=False
+                model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
             )
+
+            #TODO:pack as function
+            for veh in model.vehicles:
+                if not veh.available_lanes:
+                    veh.available_lanes=model.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+                veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
+
+            # trajectory = egoplanner.plan(model.ego, model.roadgraph, None, model.timeStep)
+            # trajectories[model.ego_id]=trajectory
 
             model.setTrajectories(trajectories)
 

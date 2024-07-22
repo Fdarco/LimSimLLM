@@ -12,9 +12,8 @@ from trafficManager.decision_maker.mcts_decision_maker import (
     MultiDecisionMaker,
 )
 from simModel_Carla.ego_vehicle_planning import LLMEgoPlanner #TODO:move py to this folder
-from simModel_Carla.Model import Model
 from simModel_Carla.Roadgraph import RoadGraph
-from trafficManager.carlaWrapper import carlaRoadGraphWrapper
+from simModel_Carla.carlaWrapper import carlaRoadGraphWrapper
 
 from planner.multi_vehicle_planner import MultiVehiclePlanner
 from predictor.simple_predictor import UncontrolledPredictor
@@ -49,7 +48,7 @@ class TrafficManager:
     """
 
     def __init__(self,
-                 model: Model,
+                 model,
                  predictor: AbstractPredictor = None,
                  ego_decision: AbstractEgoDecisionMaker = None,
                  ego_planner: AbstractEgoPlanner = None,
@@ -89,7 +88,8 @@ class TrafficManager:
 
         current_time_step = int(T / self.config["DT"])
         through_timestep = current_time_step - self.time_step
-
+        
+        carlaRoadgraph=roadgraph
         roadgraph=carlaRoadGraphWrapper(roadgraph)
 
         # Perception module
@@ -147,10 +147,10 @@ class TrafficManager:
                                                        T=T, config=self.config)
 
         # default: use the ego_planner, in trafficManager/planner/ego_vehicle_planner.py
-        # if self.config["EGO_PLANNER"]:
-        vehicles[ego_id].behaviour = ego_behaviour
-        ego_path = self.ego_planner.plan(vehicles[ego_id],roadgraph, self.config,T)
-        result_paths[ego_id] = ego_path
+        if self.config["EGO_PLANNER"]:
+            ego_path = self.ego_planner.plan(vehicles[ego_id], carlaRoadgraph, None, current_time_step)
+            vehicles[ego_id].behaviour = ego_behaviour
+            result_paths[ego_id] = ego_path
 
         # Update Last Seen
         output_trajectories = {}

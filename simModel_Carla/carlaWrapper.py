@@ -4,7 +4,9 @@ import utils.roadgraph as rd
 from typing import Union
 
 from simModel_Carla.Roadgraph import RoadGraph
-from simModel_Carla.Network_Structure import NormalLane,JunctionLane,Edge,Section,AbstractLane
+# from simModel_Carla.Network_Structure import NormalLane,JunctionLane,Edge,Section,AbstractLane
+import Network_Structure as cl
+
 
 class carlaRoadGraphWrapper(rd.RoadGraph):
     def __init__(self,roadgraph:RoadGraph):
@@ -12,7 +14,7 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
 
     def get_lane_by_id(self, lane_id: str):
         lane=self.roadgraph.get_lane_by_id(lane_id)
-        if isinstance(lane,NormalLane):
+        if isinstance(lane,cl.NormalLane):
             normal_lane=carlaNormalLaneWrapper(lane)
             #next_lane:{to_normal_lane_id:(via_juction_lane_id,’direction’}
             if lane.id in self.roadgraph.Normal2Junction.keys():
@@ -23,17 +25,17 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
 
             return normal_lane
 
-        elif isinstance(lane,JunctionLane):
+        elif isinstance(lane,cl.JunctionLane):
             junction_lane=carlaJunctionLaneWrapper(lane)
             junction_lane.next_lane_id=self.roadgraph.WP2Lane[junction_lane.lane.next_lane]
             return junction_lane
         else:
             return None
 
-    def get_available_next_lane(self, lane_id: str, available_lanes: list[str]) -> rd.AbstractLane:
+    def get_available_next_lane(self, lane_id: str, available_lanes) -> rd.AbstractLane:
         #modified from simModel_Carla.Vehicle.get_available_next_lane
         lane = self.roadgraph.get_lane_by_id(lane_id)
-        if isinstance(lane, NormalLane):
+        if isinstance(lane, cl.NormalLane):
             # 直接查找相连的lane
             if lane.next_lane:
                 next_lane_id = self.roadgraph.WP2Lane[lane.next_lane]
@@ -47,7 +49,7 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
                         return self.get_lane_by_id(next_lane_i)
 
         # 如果是junction lane，则直接查找和他相连的lane
-        elif isinstance(lane, JunctionLane):
+        elif isinstance(lane, cl.JunctionLane):
             next_lane_id = self.roadgraph.WP2Lane[lane.next_lane]
             if next_lane_id in available_lanes:
                 return self.get_lane_by_id(next_lane_id)
@@ -55,17 +57,23 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
 
     def get_next_lane(self, lane_id: str) -> Union[rd.NormalLane, rd.JunctionLane]:
         lane = self.roadgraph.get_lane_by_id(lane_id)
-        if isinstance(lane, NormalLane):
-            next_lane = self.get_lane_by_id(self.roadgraph.WP2Lane[lane.next_lane])
-            return next_lane
-        elif isinstance(lane, JunctionLane):
-            next_lane = self.get_lane_by_id(self.roadgraph.WP2Lane[lane.next_lane])
-            return next_lane
+        if isinstance(lane, cl.NormalLane):
+            if lane.next_lane:
+                next_lane = self.get_lane_by_id(self.roadgraph.WP2Lane[lane.next_lane])
+                return next_lane
+            else:
+                return None
+        elif isinstance(lane, cl.JunctionLane):
+            if lane.next_lane:
+                next_lane = self.get_lane_by_id(self.roadgraph.WP2Lane[lane.next_lane])
+                return next_lane
+            else:
+                return None
         return None
 
 
 class carlaNormalLaneWrapper(rd.NormalLane):
-    def __init__(self,lane:NormalLane):
+    def __init__(self,lane:cl.NormalLane):
         self.lane=lane
         self.id=lane.id
         self.course_spline=lane.course_spline
@@ -82,7 +90,7 @@ class carlaNormalLaneWrapper(rd.NormalLane):
         return self.lane.length
 
 class carlaJunctionLaneWrapper(rd.JunctionLane):
-    def __init__(self,lane:JunctionLane):
+    def __init__(self,lane:cl.JunctionLane):
         self.lane=lane
         self.id=lane.id
         self.width=lane.width

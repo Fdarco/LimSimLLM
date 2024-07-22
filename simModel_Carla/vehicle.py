@@ -108,7 +108,7 @@ class Vehicle:
         }
 
     def get_available_lanes(self, roadgraph: RoadGraph) -> Set[str]:
-        """根据当前车辆的lane以及visiable_distance，获取当前车辆可见范围内的lane信息(PS: 只考虑到本edge和下一个edge的情况)
+        """根据当前车辆的lane以及visiable_distance，获取当前车辆可见范围内的lane信息(PS: 只考虑到本edge和下一个edge的情况),next_available_lanes
 
         Args:
             roadgraph (RoadGraph): 路网信息

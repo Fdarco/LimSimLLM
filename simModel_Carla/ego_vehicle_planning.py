@@ -57,7 +57,7 @@ class LLMEgoPlanner:
             Behaviour: behaviour
         """
         ego_veh.behaviour = Behaviour.IDLE
-
+        ego_veh.next_available_lanes=ego_veh.available_lanes
         if not current_lane.id in ego_veh.next_available_lanes:
             # 说明应该换道了
             while current_lane.left_lane:
@@ -98,6 +98,7 @@ class LLMEgoPlanner:
         start = time.time()
         current_lane = roadgraph.get_lane_by_id(ego_veh.lane_id)
         obs_list = []
+        ego_veh.state=ego_veh.current_state
 
         # vehicle_id = ego_veh.id
         # Process static obstacle
@@ -136,8 +137,7 @@ class LLMEgoPlanner:
         ego_veh.behaviour = self.simple_state_machine(ego_veh, roadgraph, current_lane)
 
         # 对于很短的lane，可能会规划不出来
-        next_lane = ego_veh.get_available_next_lane(
-            roadgraph, current_lane.id)
+        next_lane = roadgraph.get_available_next_lane(current_lane.id,ego_veh.available_lanes)
         
         # 针对lane length很短的section，可以允许车辆沿着当前lane继续行驶
         if next_lane == None:
@@ -150,8 +150,7 @@ class LLMEgoPlanner:
             lanes = [current_lane, next_lane]
             if current_lane.length - ego_veh.state.s + next_lane.length < 20:#why 20?
                 # 找下一个lane
-                next_lane = ego_veh.get_available_next_lane(
-                    roadgraph, next_lane.id)
+                next_lane = roadgraph.get_available_next_lane(current_lane.id,ego_veh.available_lanes)
                 if next_lane != None:
                     lanes.append(next_lane)
         else:

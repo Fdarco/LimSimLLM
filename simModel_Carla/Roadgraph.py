@@ -335,4 +335,33 @@ class RoadGraph:
         return roadgraphRenderData, VRDDict
 
 
+    def get_available_next_lane(self, lane_id: str,available_lanes: set):
+        """获取当前和当前lane连接的下一个available lane
 
+        Args:
+            roadgraph (RoadGraph): 路网信息
+            lane_id (str): current lane id
+
+        Returns:
+            AbstractLane: 下一个available lane
+        """
+        lane = self.get_lane_by_id(lane_id)
+        if isinstance(lane, NormalLane):
+            # 直接查找相连的lane
+            if lane.next_lane:
+                next_lane_id = self.WP2Lane[lane.next_lane]
+                if next_lane_id in available_lanes:
+                    return self.get_lane_by_id(next_lane_id)
+            # 查找相连的junction lane
+            else:
+                next_junction_list = self.get_Normal2Junction(lane.id)
+                for next_lane_i in next_junction_list:
+                    if next_lane_i in available_lanes:
+                        return self.get_lane_by_id(next_lane_i)
+
+        # 如果是junction lane，则直接查找和他相连的lane
+        elif isinstance(lane, JunctionLane):
+            next_lane_id = self.WP2Lane[lane.next_lane]
+            if next_lane_id in available_lanes:
+                return self.get_lane_by_id(next_lane_id)
+        return None
