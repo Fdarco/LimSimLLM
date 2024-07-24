@@ -95,16 +95,17 @@ class Vehicle:
             self.state.x, self.state.y)
 
     def export2Dict(self,roadgraph):
-        if not self.available_lanes:
+        if not self.available_lanes and self.route:
             self.available_lanes=roadgraph.get_all_available_lanes(self.route,self.end_waypoint)
         return {
             'id': self.id,"vTypeID":self.id,
             'xQ': self.xQ, 'yQ': self.yQ, 'yawQ': self.yawQ,
             'speedQ': self.speedQ, 'accelQ': self.accelQ,
             'laneIDQ': self.laneIDQ, 'lanePosQ': self.lanePosQ,
-            'availableLanes': self.get_available_lanes(roadgraph),
+            'availableLanes': [] if not self.route else self.get_available_lanes(roadgraph),
             'routeIdxQ': self.routeIdxQ, 'width': self.width,
-            'length':self.length
+            'length':self.length,
+            'isAutoPilot':self.isAutoPilot
         }
 
     def get_available_lanes(self, roadgraph: RoadGraph) -> Set[str]:

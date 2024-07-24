@@ -55,7 +55,7 @@ class Model:
 
         # --------- define actors-related property --------- #
         self.v_actors:Dict[int,carla.libcarla.Vehicle]={}
-        self.vehicles:list =[]
+        self.vehicles:List[Vehicle] =[]
 
         self.p_actors:Dict[int,carla.libcarla.Actor]={}
         self.pedestrians:list=[]
@@ -109,7 +109,10 @@ class Model:
 
         self.ego,self.ego_id=self.initEgo()
         self.vehicles.append(self.ego)
-
+        
+        for veh in self.vehicles:
+            veh.available_lanes=self.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+            
         self.simDescriptionCommit()
         # --------- carla sync mode ---------- #
         settings = self.world.get_settings()
@@ -151,19 +154,17 @@ class Model:
             self.roadgraph.wp_transform(self.carla_map)
             print("Generated roadgraph and saved to cache.")
 
-    def setAutoPilot(self,vehicle):
-        vehicle.actor.set_autopilot()
+    def setAutoPilot(self,vehicle:Vehicle):
+        vehicle.actor.set_autopilot(True)
         vehicle.isAutoPilot=True
 
-        #route会被改变，由carla的routeplanner
-        grp = GlobalRoutePlanner(self.carla_map, 0.5)
-        route_carla = grp.trace_route(vehicle.actor.get_location(), vehicle.end_waypoint.transform.location)
-        vehicle.route = self.roadgraph.get_route_edge(route_carla)
-        vehicle.available_lanes=self.roadgraph.get_all_available_lanes(vehicle.route,vehicle.end_waypoint)
-
-        route_carla=[wp[0].transform.location for wp in route_carla]
-
-        self.carla_tm.set_path(vehicle.actor,route_carla)
+        vehicle.route=None#vehicle controled by autopilot cant follow the given route
+        vehicle.available_lanes=dict()
+        
+        self.carla_tm.auto_lane_change(vehicle.actor,True)
+        #set_path function is not working properly
+        # route_carla=self.routeTransform(vehicle)
+        # self.carla_tm.set_path(vehicle.actor,route_carla)
 
     def runAutoPilot(self):
         self.carla_tm = self.client.get_trafficmanager()
@@ -203,6 +204,8 @@ class Model:
             vehicle = Vehicle(actor,start_waypoint, end_waypoint, self.vehicleVisbleRange,route)
             vehicle.get_route(self.carla_map,self.roadgraph)
 
+            vehicle.available_lanes=self.roadgraph.get_all_available_lanes(vehicle.route,vehicle.end_waypoint)
+
             if self.carla_tm:
                 self.setAutoPilot(vehicle)
 
@@ -233,6 +236,21 @@ class Model:
             spawn_success=self.spawnVehicleRuntime()
             print('spawn_success:',spawn_success)
 
+    def resetRoute(self,vehicle:Vehicle):
+        if vehicle.lane_id in self.roadgraph.Junction_Dict.keys():
+            grp = GlobalRoutePlanner(self.carla_map, 0.5)
+            junction_lane=self.roadgraph.get_lane_by_id(vehicle.lane_id)
+            route_carla = grp.trace_route(self.roadgraph.get_lane_by_id(self.roadgraph.WP2Lane[junction_lane.next_lane]).wp_list[0].transform.location, vehicle.end_waypoint.transform.location)
+            incoming_edge=vehicle.lane_id.split('-')[0]
+            vehicle.route = self.roadgraph.get_route_edge(route_carla)
+            if incoming_edge not in vehicle.route:
+                vehicle.route=[incoming_edge]+vehicle.route
+        else:
+            grp = GlobalRoutePlanner(self.carla_map, 0.5)
+            route_carla = grp.trace_route(vehicle.actor.get_location(), vehicle.end_waypoint.transform.location)
+            # route_carla = grp.trace_route(self.roadgraph.get_lane_by_id(vehicle.lane_id).wp_list[0].transform.location, vehicle.end_waypoint.transform.location)
+            vehicle.route = self.roadgraph.get_route_edge(route_carla)
+
     def getSce(self):
         if not self.ego.arrive_destination():
             self.tpStart = 1
@@ -242,6 +260,16 @@ class Model:
             for v in self.vehicles:
                 if v.actor.is_active and v!=self.ego:
                     self.getVehInfo(v)
+        
+            if self.carla_tm:
+                for vehicle in self.vehINAoI.values():
+                    if vehicle.isAutoPilot==True and vehicle.route == None:
+                        self.resetRoute(vehicle)
+                for vehicle in self.outOfAoI.values():
+                    if not vehicle.isAutoPilot and vehicle.id != self.ego_id:
+                        self.setAutoPilot(vehicle)
+            
+            self.updateAvailableLane()
 
             self.putVehicleINFO()
         else:
@@ -258,7 +286,7 @@ class Model:
             vtins.length=vehicle.length
             vtins.width=vehicle.width
             vtins.vclass=vehicle.actor.type_id
-            routes = ' '.join(vehicle.route)
+            routes =  '' if not vehicle.route else ' '.join(vehicle.route)
             self.commitVehicleInfo(str(vehicle.id), vtins, routes)
             self.allvTypes[vehicle.id]=vtins
 
@@ -292,7 +320,8 @@ class Model:
         except:
             #lane is junction_lane
             road_id=lane.id.split('-')[0]
-        if road_id in vehicle.route:
+
+        if vehicle.route and road_id in vehicle.route:
             route_idx=vehicle.route.index(road_id)
         else:
             route_idx=0
@@ -411,15 +440,20 @@ class Model:
                 QA.prompt_tokens, QA.completion_tokens, QA.total_tokens, QA.total_time, QA.choose_action
             )
         )
+    def shutdownAutoPilot(self,vehicle):
+        if self.carla_tm and vehicle.isAutoPilot:
+            vehicle.actor.set_autopilot(False)
+            vehicle.isAutoPilot=False
+            vehicle.actor.set_simulate_physics(False)
+
+
     def updateVeh(self):
         """
         update vehicles' actions in carla
         """
         for vehicle in self.vehicles:
             if vehicle.trajectory:
-                if self.carla_tm:
-                    vehicle.actor.set_autopilot(False)
-                    vehicle.isAutoPilot=False
+                self.shutdownAutoPilot(vehicle)#use trajectory instead autopilot maybe need to be set in getsce,because of the bug
                 vehicle.state=vehicle.trajectory.states[0]
                 centerx, centery, yaw, speed, accel = vehicle.trajectory.pop_last_state()
                 self.v_actors[vehicle.id].set_transform(carla.Transform(location=carla.Location(x=centerx, y=centery, z=0),
@@ -438,7 +472,12 @@ class Model:
 
         for veh in needRemoved:
             self.vehicles.remove(veh)
-            veh.actor.destroy()
+
+            try:
+                veh.actor.destroy()
+            except:
+                pass#already destroyed
+
             del self.v_actors[veh.id]
             if veh.id in self.vehINAoI.keys():
                 del self.vehINAoI[veh.id]
@@ -563,8 +602,6 @@ class Model:
                 continue
             else:
                 veh.trajectories=None
-                if self.carla_tm:
-                    self.setAutoPilot(veh)
                 
 
     def exportSce(self):
@@ -577,11 +614,23 @@ class Model:
         }
         return self.roadgraph,vehicles
 
+    def updateAvailableLane(self):
+        for veh in self.vehicles:
+            try:
+                if not veh.available_lanes and veh.route:
+                    veh.available_lanes=model.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+                if veh.available_lanes and veh.route:
+                        veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
+            except:
+                self.resetRoute(veh)
+                veh.available_lanes=model.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+                veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
+
 if __name__=='__main__':
     config_name='./simModel_Carla/example_config.yaml'
     random.seed(112)
 
-    stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')
+    stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')    
     database = 'results/' + stringTimestamp + '.db'
 
     model=Model(cfgFile=config_name,dataBase=database)
@@ -589,6 +638,10 @@ if __name__=='__main__':
     planner = TrafficManager(model)
 
     model.start()
+
+    for item in model.roadgraph.Edges.items():
+        model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+    
     model.runAutoPilot()
 
     gui = GUI(model)
@@ -604,12 +657,6 @@ if __name__=='__main__':
                 model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
             )
 
-            #TODO:pack as function
-            for veh in model.vehicles:
-                if not veh.available_lanes:
-                    veh.available_lanes=model.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
-                veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
-
             # trajectory = egoplanner.plan(model.ego, model.roadgraph, None, model.timeStep)
             # trajectories[model.ego_id]=trajectory
 
@@ -619,8 +666,10 @@ if __name__=='__main__':
             print(model.ego.behaviour)
 
             world=model.world
-            for state in model.ego.trajectory.states:
-                world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
+            for veh in model.vehicles:
+                if veh.trajectory:
+                    for state in veh.trajectory.states:
+                        world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
 
         model.updateVeh()
 
