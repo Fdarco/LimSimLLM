@@ -128,7 +128,7 @@ class Vehicle:
             else:
                 remain_distance = self.calcaulate_cur_edge_remain_length(roadgraph)
             # if the remain distance is larger than the visible distance, then the vehicle can drive on the all available lanes
-            if self.visible_distance <= remain_distance:
+            if self.visible_distance <= remain_distance+5:#in case of when vehicle from junction to edge and cant find available lane
                 output = set()
                 for _, values in self.available_lanes[cur_edge.id]["available_lane"].items():
                     output.update([lane.id for lane in values])

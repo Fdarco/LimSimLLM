@@ -242,13 +242,13 @@ class TrafficManager:
                 vehicles[vehicle["id"]] = create_vehicle(
                     vehicle, roadgraph, vtype_info, T, VehicleType.IN_AOI)
 
-        # for vehicle in vehicles_info["outOfAoI"]:
-        #     if not vehicle["xQ"]:
-        #         continue
-        #     vtype_info = self.model.allvTypes[vehicle["vTypeID"]]
-        #     if roadgraph.get_lane_by_id(vehicle["laneIDQ"][-1]) is not None:
-        #         vehicles[vehicle["id"]] = create_vehicle(
-        #             vehicle, roadgraph, vtype_info, T, VehicleType.OUT_OF_AOI)
+        for vehicle in vehicles_info["outOfAoI"]:
+            if not vehicle["xQ"]:
+                continue
+            vtype_info = self.model.allvTypes[vehicle["vTypeID"]]
+            if roadgraph.get_lane_by_id(vehicle["laneIDQ"][-1]) is not None:
+                vehicles[vehicle["id"]] = create_vehicle(
+                    vehicle, roadgraph, vtype_info, T, VehicleType.OUT_OF_AOI)
 
         ego_cnt = 1 if ego_car is not None else 0
         aoi_cnt = len([

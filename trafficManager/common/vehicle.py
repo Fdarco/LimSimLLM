@@ -238,7 +238,7 @@ class Vehicle:
                     )
 
         # in junction behaviour
-        if self.current_state.s > current_lane.course_spline.s[-1] - 0.2:
+        if self.current_state.s > current_lane.course_spline.s[-1]: #- 0.2:
             if isinstance(current_lane, NormalLane):
                 next_lane = roadgraph.get_available_next_lane(
                     current_lane.id, self.available_lanes)
@@ -358,7 +358,9 @@ def find_lane_position(lane_id: str, roadgraph: RoadGraph,
     else:
         pos_s, pos_d = lane.course_spline.cartesian_to_frenet1D(pos_x, pos_y)
         return lane_id, pos_s, pos_d
-    return None, None, None
+    # return None, None, None
+    pos_s, pos_d = lane.course_spline.cartesian_to_frenet1D(pos_x, pos_y)
+    return lane_id, pos_s, pos_d
 
 
 def create_vehicle_lastseen(vehicle_info: Dict, lastseen_vehicle: Vehicle,

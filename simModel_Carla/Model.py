@@ -155,6 +155,7 @@ class Model:
             print("Generated roadgraph and saved to cache.")
 
     def setAutoPilot(self,vehicle:Vehicle):
+        vehicle.actor.set_simulate_physics(True)
         vehicle.actor.set_autopilot(True)
         vehicle.isAutoPilot=True
 
@@ -263,7 +264,7 @@ class Model:
         
             if self.carla_tm:
                 for vehicle in self.vehINAoI.values():
-                    if vehicle.isAutoPilot==True and vehicle.route == None:
+                    if vehicle.route == None:
                         self.resetRoute(vehicle)
                 for vehicle in self.outOfAoI.values():
                     if not vehicle.isAutoPilot and vehicle.id != self.ego_id:
@@ -277,7 +278,7 @@ class Model:
                 print('[cyan]The ego car has reached the destination.[/cyan]')
                 self.tpEnd = 1
 
-    def getVehInfo(self,vehicle):
+    def getVehInfo(self,vehicle:Vehicle):
         if vehicle.id not in self.allvTypes:
             vtins=vehType(str(vehicle.id))
             vtins.maxAccel=5
