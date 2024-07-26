@@ -153,7 +153,8 @@ class Model:
             #dict -> Waypoint
             self.roadgraph.wp_transform(self.carla_map)
             print("Generated roadgraph and saved to cache.")
-
+        #get junction traffic light
+        self.roadgraph.get_traffic_light(self.world)
     def setAutoPilot(self,vehicle:Vehicle):
         vehicle.actor.set_simulate_physics(True)
         vehicle.actor.set_autopilot(True)

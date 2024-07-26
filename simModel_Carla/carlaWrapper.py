@@ -98,6 +98,7 @@ class carlaJunctionLaneWrapper(rd.JunctionLane):
         self.next_lane_id=''
         self.affJunc=lane.id
         self.speed_limit=30#TODO:how to get and what unit
+        self.currTlState=lane.currTlState
 
     @property
     def spline_length(self):

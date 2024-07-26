@@ -315,14 +315,15 @@ class RoadGraph:
 
         #TODO:需要读取交通信号灯，并将其和junctionlane关联起来
         for jid,junction_lane in self.Junction_Dict.items():
+            tls=junction_lane.currTlState
             try:
                 roadgraphRenderData.junction_lanes[jid] = JLRD(
-                    jid, junction_lane.center_line, 'g'
+                    jid, junction_lane.center_line, tls
                 )
             except AttributeError:
                 junction_lane.getPlotElem()
                 roadgraphRenderData.junction_lanes[jid] = JLRD(
-                    jid, junction_lane.center_line, 'g'
+                    jid, junction_lane.center_line, tls
                 )
 
         # export vehicles' information using dict.
@@ -365,3 +366,40 @@ class RoadGraph:
             if next_lane_id in available_lanes:
                 return self.get_lane_by_id(next_lane_id)
         return None
+
+    def get_traffic_light(self, world:carla.World):
+        carla_junction_ids = []
+        for key, junction_lane in self.Junction_Dict.items():
+            if junction_lane.wp_list[0].junction_id not in carla_junction_ids:
+                carla_junction_ids.append(junction_lane.wp_list[0].junction_id)
+
+        traffic_lights:Dict[str,carla.TrafficLight]=field(default_factory=dict)
+        for j_id in carla_junction_ids:
+            tls=world.get_traffic_lights_in_junction(j_id)
+            for tl in tls:
+                wp_list=tl.get_affected_lane_waypoints()
+                for wp in wp_list:
+                    wp_tuple=(wp.road_id,wp.section_id,wp.lane_id)
+                    lane_id=self.WP2Lane[wp_tuple]
+                    if lane_id in self.Junction_Dict.keys():
+                        if lane_id not in traffic_lights:
+                            traffic_lights[lane_id]=tl
+                        else:
+                            assert  traffic_lights[lane_id]==tl#TODO:check and delete
+                    elif lane_id in self.NormalLane_Dict.keys():
+                        if lane_id in self.Normal2Junction.keys():
+                            junction_lane_ids=self.Normal2Junction[lane_id]
+                            for junction_lane_id in junction_lane_ids:
+                                if junction_lane_id in self.Junction_Dict.keys():
+                                    if junction_lane_id not in traffic_lights:
+                                        traffic_lights[junction_lane_id] = tl
+                                    else:
+                                        assert traffic_lights[junction_lane_id] == tl  # TODO:check and delete
+                    else:
+                        continue
+
+        for jid,tl in traffic_lights.items():
+            junction_lane=self.Junction_Dict[jid]
+            junction_lane.traffic_light=tl
+
+

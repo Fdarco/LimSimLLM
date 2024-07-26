@@ -195,6 +195,7 @@ class JunctionLane(AbstractLane):
     """
     incoming_edge_id: str = 0
     outgoing_edge_id: str = 0
+    traffic_light:carla.TrafficLight=None
 
     @property
     def previous_lane(self) -> Tuple[int, int, int]:
@@ -225,3 +226,19 @@ class JunctionLane(AbstractLane):
             if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
                 return (wp.road_id, wp.section_id, wp.lane_id)
         return None
+
+    @property
+    def currTlState(self):
+        if self.traffic_light:
+            traffic_light_state=self.traffic_light.state
+            if traffic_light_state==carla.TrafficLightState.Red:
+                tls='r'
+            elif traffic_light_state==carla.TrafficLightState.Green:
+                tls='g'
+            elif traffic_light_state==carla.TrafficLightState.Yellow:
+                tls='y'
+            else:
+                raise ValueError
+            return tls
+        else:
+            return 'g'
