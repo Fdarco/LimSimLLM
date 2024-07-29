@@ -91,10 +91,14 @@ class EnvDescription:
         current_lane = roadgraph.get_lane_by_id(ego["laneIDQ"][-1])
         next_lane = None
         if isinstance(current_lane, NormalLane):
-            next_junction_id = current_lane.affiliated_edge.to_junction
-            for lane_id in ego["availableLanes"]:
-                if next_junction_id in lane_id:
-                    next_lane = roadgraph.get_lane_by_id(lane_id)
+            if current_lane.affiliated_edge.to_junction:
+                next_junction_id = current_lane.affiliated_edge.to_junction
+                for lane_id in ego["availableLanes"]:
+                    if next_junction_id in lane_id:
+                        next_lane = roadgraph.get_lane_by_id(lane_id)
+            else:
+                #for carla roadgrapgh
+                next_lane = roadgraph.get_available_next_lane(ego["laneIDQ"][-1], ego["availableLanes"])
                     
         else:
             next_lane = roadgraph.get_available_next_lane(ego["laneIDQ"][-1], ego["availableLanes"])
@@ -175,22 +179,36 @@ class EnvDescription:
 
         # ----------- need to change lane ------------ #
         # no need to change lane in junction or correct lane
-        if not(curr_lane_id[0] == ':' or curr_lane_id in availableLanes):
-            curr_lane_idx = int(curr_lane_id.split('_')[-1])
-            for al in availableLanes:
-                if al[0] != ':':
-                    al_idx = int(al.split('_')[-1])
-                    if al_idx > curr_lane_idx:
-                        self.logging.info(f"Ego vehicle choose to change Left lane")
-                        nav_describe += self.des_json["navigation_instruction"]["left"]
+        if not(isinstance(curr_lane,JunctionLane) or curr_lane_id in availableLanes):
+            try:
+                curr_lane_idx = int(curr_lane_id.split('_')[-1])
+                for al in availableLanes:
+                    if al[0] != ':':
+                        al_idx = int(al.split('_')[-1])
+                        if al_idx > curr_lane_idx:
+                            self.logging.info(f"Ego vehicle choose to change Left lane")
+                            nav_describe += self.des_json["navigation_instruction"]["left"]
 
-                    else:
-                        self.logging.info(f"Ego vehicle choose to change Right lane")
-                        nav_describe += self.des_json["navigation_instruction"]["right"]
-                    break
+                        else:
+                            self.logging.info(f"Ego vehicle choose to change Right lane")
+                            nav_describe += self.des_json["navigation_instruction"]["right"]
+                        break
+            except:
+                curr_lane_idx=int(curr_lane_id.split('-')[-1])
+                for al in availableLanes:
+                    if al not in roadgraph.roadgraph.Junction_Dict.keys():
+                        al_idx = int(al.split('-')[-1])
+                        if al_idx > curr_lane_idx:
+                            self.logging.info(f"Ego vehicle choose to change Left lane")
+                            nav_describe += self.des_json["navigation_instruction"]["left"]
+
+                        else:
+                            self.logging.info(f"Ego vehicle choose to change Right lane")
+                            nav_describe += self.des_json["navigation_instruction"]["right"]
+                        break
         
         # ------------ in junction ------------ #
-        elif curr_lane_id[0] == ':':
+        elif isinstance(curr_lane,JunctionLane):
             nav_describe = self.des_json["navigation_instruction"]["junction"]
             
         # ------------ normal straight ------------ #
@@ -215,7 +233,7 @@ class EnvDescription:
         curr_lane = roadgraph.get_lane_by_id(curr_lane_id)
         next_lane = roadgraph.get_available_next_lane(curr_lane_id, ego["availableLanes"])
         # 1. If the distance from the intersection stop line is less than 30 meters, make notice 
-        if curr_lane_id[0] != ':' and curr_lane.spline_length - ego["lanePosQ"][-1] < 30:
+        if not isinstance(curr_lane,JunctionLane) and curr_lane.spline_length - ego["lanePosQ"][-1] < 30:
             notice_description += self.des_json["intension"]["junction"]
             if next_lane.currTlState != None:
                 notice_description += self.des_json["intension"]["traffic_light"]
@@ -233,7 +251,7 @@ class EnvDescription:
 
         return notice_description
     
-    def getLastDecisionInfo(self, vehicle: Dict[str, Dict]) -> str:
+    def getLastDecisionInfo(self,roadgraph:RoadGraph, vehicle: Dict[str, Dict]) -> str:
         """get last decision description
 
         Args:
@@ -244,11 +262,11 @@ class EnvDescription:
             str: last decision prompt
         """
         ego = vehicle["egoCar"]
-
+        curlane=roadgraph.get_lane_by_id(ego["laneIDQ"][-1])
         last_decision_describe = "### Last decision:\n"
         if self.decision != None:
             last_decision_describe += self.des_json["basic_description"]["last_decision_description"]["basic"].format(delta_time = 1, decision = self.decision)
-            if ego["laneIDQ"][-1][0] != ":" and (self.decision == Behaviour.LCL or self.decision == Behaviour.LCR):
+            if isinstance(curlane,JunctionLane) and (self.decision == Behaviour.LCL or self.decision == Behaviour.LCR):
                 if ego["laneIDQ"][-11] != ego["laneIDQ"][-1]:
                     last_decision_describe += self.des_json["basic_description"]["last_decision_description"]["changed_lane"]
                 else:
@@ -273,7 +291,7 @@ class EnvDescription:
         current_lane = roadgraph.get_lane_by_id(ego["laneIDQ"][-1])
         available_actions = [Behaviour.AC, Behaviour.IDLE, Behaviour.DC, Behaviour.LCL, Behaviour.LCR]
 
-        if ego["laneIDQ"][-1][0] == ':':
+        if ego["laneIDQ"][-1][0] == ':' or isinstance(current_lane,JunctionLane):
             available_actions.remove(Behaviour.LCL) if Behaviour.LCL in available_actions else None
             available_actions.remove(Behaviour.LCR) if Behaviour.LCR in available_actions else None
 
@@ -315,12 +333,20 @@ class EnvDescription:
         sv_list = other_vehicles[:]
         current_lane = roadgraph.get_lane_by_id(ego["laneIDQ"][-1])
 
+        def get_edge_id(jid):
+            if '_' in jid:
+                ego_edge = jid.split('_')[0]
+            elif '-' in jid:
+                ego_edge = jid.split('-')[0]
+            else:
+                raise ValueError
+            return ego_edge
         # ---------- in normal lane, need to consider the vehicles in left, right and current lane ---------- #
-        if ego["laneIDQ"][-1][0] != ":":
-            ego_edge = ego["laneIDQ"][-1].split('_')[0]
+        if not isinstance(current_lane,JunctionLane):
+            ego_edge=get_edge_id(ego["laneIDQ"][-1])
             # find the sv in the same edge with ego
             for sv in sv_list:
-                sv_edge = sv["laneIDQ"][-1].split('_')[0]
+                sv_edge = get_edge_id(sv["laneIDQ"][-1])
                 if sv_edge == ego_edge:
                     same_edge_sv = self.describeSVNormalLane(sv, ego, current_lane)
                     if same_edge_sv != "":
@@ -554,5 +580,5 @@ class EnvDescription:
         prompt += self.getNextLaneInfo(roadgraph, vehicles)
         prompt += self.getEgoInfo(vehicles)
         prompt += self.getOtherVehicleInfo(roadgraph, vehicles)
-        prompt += self.getLastDecisionInfo(vehicles)
+        prompt += self.getLastDecisionInfo(roadgraph,vehicles)
         return prompt

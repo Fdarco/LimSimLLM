@@ -373,7 +373,7 @@ class RoadGraph:
             if junction_lane.wp_list[0].junction_id not in carla_junction_ids:
                 carla_junction_ids.append(junction_lane.wp_list[0].junction_id)
 
-        traffic_lights:Dict[str,carla.TrafficLight]=field(default_factory=dict)
+        traffic_lights:Dict[str,carla.TrafficLight]={}
         for j_id in carla_junction_ids:
             tls=world.get_traffic_lights_in_junction(j_id)
             for tl in tls:
@@ -382,19 +382,15 @@ class RoadGraph:
                     wp_tuple=(wp.road_id,wp.section_id,wp.lane_id)
                     lane_id=self.WP2Lane[wp_tuple]
                     if lane_id in self.Junction_Dict.keys():
-                        if lane_id not in traffic_lights:
+                        if lane_id not in traffic_lights.keys():
                             traffic_lights[lane_id]=tl
-                        else:
-                            assert  traffic_lights[lane_id]==tl#TODO:check and delete
                     elif lane_id in self.NormalLane_Dict.keys():
                         if lane_id in self.Normal2Junction.keys():
                             junction_lane_ids=self.Normal2Junction[lane_id]
                             for junction_lane_id in junction_lane_ids:
                                 if junction_lane_id in self.Junction_Dict.keys():
-                                    if junction_lane_id not in traffic_lights:
+                                    if junction_lane_id not in traffic_lights.keys():
                                         traffic_lights[junction_lane_id] = tl
-                                    else:
-                                        assert traffic_lights[junction_lane_id] == tl  # TODO:check and delete
                     else:
                         continue
 

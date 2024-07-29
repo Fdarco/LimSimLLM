@@ -15,7 +15,7 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
     def get_lane_by_id(self, lane_id: str):
         lane=self.roadgraph.get_lane_by_id(lane_id)
         if isinstance(lane,cl.NormalLane):
-            normal_lane=carlaNormalLaneWrapper(lane)
+            normal_lane=carlaNormalLaneWrapper(lane,self.roadgraph)
             #next_lane:{to_normal_lane_id:(via_juction_lane_id,’direction’}
             if lane.id in self.roadgraph.Normal2Junction.keys():
                 junction_lane_list= self.roadgraph.Normal2Junction[lane.id]
@@ -73,13 +73,13 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
 
 
 class carlaNormalLaneWrapper(rd.NormalLane):
-    def __init__(self,lane:cl.NormalLane):
+    def __init__(self,lane:cl.NormalLane,rd):
         self.lane=lane
         self.id=lane.id
         self.course_spline=lane.course_spline
         self.next_lanes= {}
         self.width=lane.width
-        self.affiliated_edge=carlaEdgeWrapper(self.lane.affiliated_section.affliated_edge.id)
+        self.affiliated_edge=carlaEdgeWrapper(self.lane.affiliated_section.affliated_edge.id,rd)
         self.speed_limit=30#TODO:how to get and what unit
     def left_lane(self) -> str:
         return self.lane.left_lane
@@ -105,8 +105,19 @@ class carlaJunctionLaneWrapper(rd.JunctionLane):
         return self.lane.length
 
 class carlaEdgeWrapper(rd.Edge):
-    def __init__(self,id):
+    def __init__(self,id,rd:RoadGraph):
         self.id=id
+        
+        lanes=[]
+        ce=rd.Edges[id]
+        for sid in ce.section_list:
+            cs=rd.Sections[sid]
+            for lane_id in cs.lanes.values():
+                lanes.append(lane_id)
+
+        self.lanes=lanes
+
+        self.to_junction=None
 
     def __eq__(self, other):
         return self.id==other.id

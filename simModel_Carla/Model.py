@@ -629,6 +629,10 @@ class Model:
                 veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
 
 if __name__=='__main__':
+    from simInfo.EnvDescriptor import EnvDescription
+    from carlaWrapper import carlaRoadGraphWrapper
+    descriptor=EnvDescription()
+
     config_name='./simModel_Carla/example_config.yaml'
     random.seed(112)
 
@@ -659,9 +663,15 @@ if __name__=='__main__':
                 model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
             )
 
-            # trajectory = egoplanner.plan(model.ego, model.roadgraph, None, model.timeStep)
-            # trajectories[model.ego_id]=trajectory
+            start_time=time.time()
+            
+            navInfo = descriptor.getNavigationInfo(carlaRoadGraphWrapper(roadgraph), vehicles)
+            actionInfo = descriptor.getAvailableActionsInfo(carlaRoadGraphWrapper(roadgraph), vehicles)
+            envInfo = descriptor.getEnvPrompt(carlaRoadGraphWrapper(roadgraph), vehicles)
 
+            current_QA = QuestionAndAnswer(envInfo, navInfo, actionInfo, '', '', 0, 0, 0, time.time()-start_time, model.ego.behaviour)
+            model.putQA(current_QA)
+         
             model.setTrajectories(trajectories)
 
             print(model.ego.lane_id)
