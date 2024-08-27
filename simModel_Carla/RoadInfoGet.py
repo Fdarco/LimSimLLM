@@ -263,6 +263,7 @@ class RoadInfoGet:
             if len(filter_wp) == 0:
                 continue
             junction_lane = JunctionLane(width=start_wp.lane_width)
+            junction_lane.node_id=start_wp.junction_id
 
             # 获取junction_lane的waypoint，可以得到从start_wp开始直到遇到normal_lane的所有waypoint
             junction_lane.wp_list = [start_wp] + start_wp.next_until_lane_end(RESOLUTION)

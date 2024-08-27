@@ -4,12 +4,15 @@ Roadgraph is a data structure that represents the road network of the map. It is
 
 import carla
 from typing import Tuple
+import sqlite3
 from dataclasses import dataclass, field
 from abc import ABC
 from typing import Dict, Union, Set, List
 import logging
 from Network_Structure import Edge, Section, NormalLane, JunctionLane
 from simModel_Carla.DataQueue import (ERD,JLRD,LRD,RGRD)
+from queue import Queue
+from datetime import datetime
 from agents.navigation.local_planner import RoadOption
 
 RESOLUTION = 0.5
@@ -35,6 +38,7 @@ class RoadGraph:
     Edges: Dict[str, Edge] = field(default_factory=dict)
     Sections: Dict[str, Section] = field(default_factory=dict)
     Normal2Junction: Dict[str, List[str]] = field(default_factory=dict)
+    dataQue=Queue()
 
 
     def get_lane_by_id(self, lane_id: str) -> Union[NormalLane, JunctionLane]:
@@ -399,3 +403,90 @@ class RoadGraph:
             junction_lane.traffic_light=tl
 
 
+    def getDataQue(self):
+        #junction lane
+        for jid,junction_lane in self.Junction_Dict.items():
+            self.dataQue.put((
+            'junctionLaneINFO', (
+                jid, round(junction_lane.width,2), float(15.0), round(junction_lane.length,2), 0,#TODO:id,width,speedlimit,length,tlsindex
+                '', '', 'pedestrian tram rail_urban rail rail_electric rail_fast ship'
+            ), 'INSERT'
+             ))
+
+        #normal lane
+        for lid,normal_lane in self.NormalLane_Dict.items():
+            rawShape=''
+            for idx,wp in enumerate(normal_lane.wp_list):
+                rawShape+=str(wp.transform.location.x)+','+str(wp.transform.location.y)
+                if idx !=len(normal_lane.wp_list)-1:
+                    rawShape+=' ' 
+            
+            self.dataQue.put((
+                'laneINFO', (
+                    lid, rawShape, round(normal_lane.width,2), float(30.0), normal_lane.affiliated_section.affliated_edge.id, 
+                    round(normal_lane.length,2), 'driving', '', 'pedestrian tram rail_urban rail rail_electric rail_fast ship'
+                ), 'INSERT'
+            ))
+        
+        #edge
+        for eid,edge in self.Edges.items():
+            lanes=[]
+            for sid in edge.section_list:
+                cs=self.Sections[sid]
+                for lane_id in cs.lanes.values():
+                    lanes.append(lane_id)
+            for jid,junction_lane in self.Junction_Dict.items():
+                idlist=junction_lane.id.split('-')
+                for i,id in enumerate(idlist):
+                    if eid == id and i==0:
+                        toNode = junction_lane.node_id
+                    elif eid == id and i==1:
+                        fromNode = junction_lane.node_id
+            self.dataQue.put((
+                    'edgeINFO', (eid,len(lanes), str(fromNode), str(toNode)), 'INSERT'
+                ))
+        
+        #connection
+        viewed_junction=set()
+        for jid,junction_lane in self.Junction_Dict.items():
+            fromLaneID=self.WP2Lane[junction_lane.previous_lane]
+            toLaneID=self.WP2Lane[junction_lane.next_lane]
+            self.dataQue.put((
+            'connectionINFO', (
+                fromLaneID, toLaneID, 's', junction_lane.id#TODO cant get correct direction
+            ), 'INSERT'))
+
+            if junction_lane.node_id not in viewed_junction:
+                self.dataQue.put((
+                                'junctionINFO', (junction_lane.node_id, ''), 'INSERT'#TODO:cant find shape
+                            ))
+                viewed_junction.add(junction_lane.node_id)
+                
+        # self.dataQue.put((
+        #         'geohashINFO',
+        #         (ghx, ghy, ghEdges, ghJunctions), 'INSERT'
+        #     ))
+
+    def insertCommit(self,dataBase):
+        
+        conn = sqlite3.connect(dataBase, check_same_thread=False)
+        cur = conn.cursor()
+        commitCnt = 0
+        while not self.dataQue.empty():
+            tableName, data, process = self.dataQue.get()
+            sql = '{} INTO {} VALUES '.format(process, tableName) + \
+                '(' + '?,'*(len(data)-1) + '?' + ')'
+            try:
+                cur.execute(sql, data)
+            except sqlite3.OperationalError as e:
+                print(sql, data)
+            commitCnt += 1
+            if commitCnt == 10000:
+                conn.commit()
+                commitCnt = 0
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        print('[green bold]Network information commited at {}.[/green bold]'.format(
+            datetime.now().strftime('%H:%M:%S.%f')[:-3]))

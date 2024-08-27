@@ -54,10 +54,14 @@ class MapCoordTF:
 
 
 def deduceEdge(laneID: str) -> str:
-    slist = laneID.split('_')
-    del (slist[-1])
-    return '_'.join(slist)
-
+    if '_' in laneID:
+        slist = laneID.split('_')
+        del (slist[-1])
+        return '_'.join(slist)
+    elif '-' in laneID:
+        #carla
+        slist = laneID.split('-')
+        return slist[0]
 
 class vehType:
     def __init__(self, id: str) -> None:

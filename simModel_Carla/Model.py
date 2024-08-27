@@ -11,7 +11,11 @@ from simModel_Carla.Camera import nuScenesImageExtractor
 from simModel_Carla.MPGUI import GUI
 from trafficManager.traffic_manager_carla import TrafficManager
 from trafficManager.common.vehicle import Behaviour
-
+from simInfo.CustomExceptions import (
+    CollisionChecker, CollisionException, 
+    record_result, LaneChangeException, 
+    BrainDeadlockException, TimeOutException
+)
 
 import carla
 from carla import Location, Rotation, Transform
@@ -30,6 +34,7 @@ import dill
 import pickle
 from dataclasses import field
 from datetime import datetime
+from threading import Thread
 
 class Model:
     def __init__(self,cfgFile: str=None,rouFile: str=None,dataBase: str=None):
@@ -38,6 +43,17 @@ class Model:
         self.cfg:Dict=load_config(self.cfgFile)
         self.rouFile=rouFile
         self.sim_mode: str = 'RealTime'
+
+        if dataBase:
+            self.dataBase = dataBase
+        else:
+            self.dataBase = datetime.strftime(
+                datetime.now(), '%Y-%m-%d_%H-%M-%S') + '_egoTracking' + '.db'
+
+        if os.path.exists(self.dataBase):
+            os.remove(self.dataBase)
+        self.dbBridge = DBBridge(self.dataBase)
+        self.dbBridge.createTable()
 
         # --------- init carla and roadgraph --------- #
         self.client = carla.Client('localhost', 2000)
@@ -77,16 +93,6 @@ class Model:
         self.vehicleVisbleRange=self.cfg['vehicleVisibleRange']
         self.max_veh_num=self.cfg['max_veh_num']
 
-        if dataBase:
-            self.dataBase = dataBase
-        else:
-            self.dataBase = datetime.strftime(
-                datetime.now(), '%Y-%m-%d_%H-%M-%S') + '_egoTracking' + '.db'
-
-        if os.path.exists(self.dataBase):
-            os.remove(self.dataBase)
-        self.dbBridge = DBBridge(self.dataBase)
-        self.dbBridge.createTable()
         self.renderQueue = RenderQueue(5)
         self.imageQueue = ImageQueue(50)
         self.QAQ = QAQueue(5)
@@ -155,6 +161,12 @@ class Model:
             print("Generated roadgraph and saved to cache.")
         #get junction traffic light
         self.roadgraph.get_traffic_light(self.world)
+        #commit mapdata to db
+        self.roadgraph.getDataQue()
+        Th = Thread(target=self.roadgraph.insertCommit,args=(self.dataBase,))
+        Th.start()
+        # self.roadgraph.insertCommit(self.dataBase)
+
     def setAutoPilot(self,vehicle:Vehicle):
         vehicle.actor.set_simulate_physics(True)
         vehicle.actor.set_autopilot(True)
@@ -611,7 +623,7 @@ class Model:
             return None,None
         vehicles = {
             'egoCar': self.ego.export2Dict(self.roadgraph),
-            'carInAoI': [av.export2Dict(self.roadgraph) for av in self.vehINAoI.values()],
+            'carInAoI': [av.export2Dict(self.roadgraph) for av in self.vehINAoI.values()]+[self.ego.export2Dict(self.roadgraph)],
             'outOfAoI': [sv.export2Dict(self.roadgraph) for sv in self.outOfAoI.values()]
         }
         return self.roadgraph,vehicles
@@ -627,6 +639,22 @@ class Model:
                 self.resetRoute(veh)
                 veh.available_lanes=model.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
                 veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
+        
+    def record_result(self, start_time: float, result: bool, reason: str = "", error: Exception = None) -> None:
+        conn = sqlite3.connect(model.dataBase)
+        cur = conn.cursor()
+        # add result data
+        cur.execute(
+            """INSERT INTO resultINFO (
+                egoID, result, total_score, complete_percentage, drive_score, use_time, fail_reason
+                ) VALUES (?,?,?,?,?,?,?);""",
+            (
+                str(self.ego_id), result, 0, 0, 0, time.time() - start_time, reason
+            )
+        )
+        conn.commit()
+        conn.close()
+        return 
 
 if __name__=='__main__':
     from simInfo.EnvDescriptor import EnvDescription
@@ -634,10 +662,11 @@ if __name__=='__main__':
     descriptor=EnvDescription()
 
     config_name='./simModel_Carla/example_config.yaml'
-    random.seed(112)
+    random.seed(11210238)
 
     stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')    
     database = 'results/' + stringTimestamp + '.db'
+    total_start_time = time.time()
 
     model=Model(cfgFile=config_name,dataBase=database)
     egoplanner = LLMEgoPlanner()
@@ -652,6 +681,8 @@ if __name__=='__main__':
 
     gui = GUI(model)
     gui.start()
+
+    model.record_result(total_start_time, True, None)
 
     while not model.tpEnd:
         model.moveStep()#TODO:add collisioncheck
@@ -684,6 +715,9 @@ if __name__=='__main__':
                         world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
 
         model.updateVeh()
+
+    #according to collision sensor
+    model.record_result(total_start_time, True, None)
 
     model.destroy()
     gui.terminate()

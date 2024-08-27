@@ -196,6 +196,7 @@ class JunctionLane(AbstractLane):
     incoming_edge_id: str = 0
     outgoing_edge_id: str = 0
     traffic_light:carla.TrafficLight=None
+    node_id: str = 0
 
     @property
     def previous_lane(self) -> Tuple[int, int, int]:

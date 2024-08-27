@@ -48,7 +48,7 @@ def generateDefaultImage(
 class GUI:
     def __init__(self, model: ReplayModel) -> None:
         self.model = model
-        self.netBoundary = model.netBoundary
+        # self.netBoundary = model.netBoundary
         self.is_running = True
         self.replayDelay = 0
         self.frameIncre = 0
@@ -520,7 +520,7 @@ class GUI:
         self.resize_windows()
         self.ctf = CoordTF(120, 'BEVWindow')
         dpg.show_viewport()
-        self.drawBEVWindowWhiteBG()
+        # self.drawBEVWindowWhiteBG()
         while dpg.is_dearpygui_running():
             self.render_loop()
             dpg.render_dearpygui_frame()

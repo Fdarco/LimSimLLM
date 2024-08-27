@@ -70,9 +70,12 @@ class ReplayModel:
             self.egoID = egoID
             self.ego = self.initVeh(egoID, self.timeStep)
             netBoundaryList = netBoundary.split(' ')
-            self.netBoundary: list[list[float]] = [
-                list(map(float, p.split(','))) for p in netBoundaryList
-            ]
+            try:
+                self.netBoundary: list[list[float]] = [
+                    list(map(float, p.split(','))) for p in netBoundaryList
+                ]
+            except ValueError:
+                self.netBoundary=[]
         else:
             raise TypeError('Please select the appropriate database file.')
 

@@ -414,9 +414,12 @@ class Rebuild(NetworkBuild):
             for ji in junctionINFO:
                 junctionID = ji[0]
                 jrawShape = ji[1]
-                juncShape = self.processRawShape(jrawShape)
-                # Add the first point to form a closed shape
-                juncShape.append(juncShape[0])
+                try:
+                    juncShape = self.processRawShape(jrawShape)
+                    # Add the first point to form a closed shape
+                    juncShape.append(juncShape[0])
+                except ValueError:
+                    juncShape=[]
                 junc = Junction(junctionID)
                 junc.shape = juncShape
                 self.junctions[junctionID] = junc
@@ -523,8 +526,11 @@ class Rebuild(NetworkBuild):
                     fromEdge.next_edge_info[toEdgeID].add(fromLaneID)
                     # add this junctionLane to it's parent Junction's JunctionLanes
                     fromEdge = self.getEdge(fromEdgeID)
-                    junction = self.getJunction(fromEdge.to_junction)
-                    junction.JunctionLanes.add(junctionLaneID)
+                    try:
+                        junction = self.getJunction(fromEdge.to_junction)
+                        junction.JunctionLanes.add(junctionLaneID)
+                    except AttributeError:
+                        pass
 
         cur.execute('SELECT * FROM geohashINFO;')
         geohashINFO = cur.fetchall()
