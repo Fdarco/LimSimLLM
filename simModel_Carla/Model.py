@@ -123,7 +123,8 @@ class Model:
         # --------- carla sync mode ---------- #
         settings = self.world.get_settings()
         settings.synchronous_mode = True
-        settings.fixed_delta_seconds = 0.1
+        settings.fixed_delta_seconds = self.cfg['delta_seconds']#0.1
+        self.dt=self.cfg['delta_seconds']
         self.world.apply_settings(settings)
         self.world.tick()
 
@@ -340,14 +341,19 @@ class Model:
         else:
             route_idx=0
 
+        carla_vel=vehicle.actor.get_velocity()
+
         vehicle.xQ.append(x)
         vehicle.yQ.append(y)
         vehicle.yawQ.append(yaw)
-        vehicle.speedQ.append(vehicle.actor.get_velocity().length())
+        vehicle.speedQ.append(carla_vel.length())
         vehicle.accelQ.append(vehicle.actor.get_acceleration().length())
         vehicle.routeIdxQ.append(route_idx)
         vehicle.laneIDQ.append(vehicle.lane_id)
         vehicle.lanePosQ.append(vehicle.state.s)
+
+        vehicle.vxQ.append(carla_vel.x)
+        vehicle.vyQ.append(carla_vel.y)
 
     def localization(self,vehicle):
         cur_lane = self.roadgraph.get_lane_by_id(vehicle.lane_id)
@@ -472,6 +478,10 @@ class Model:
                 centerx, centery, yaw, speed, accel = vehicle.trajectory.pop_last_state()
                 self.v_actors[vehicle.id].set_transform(carla.Transform(location=carla.Location(x=centerx, y=centery, z=0),
                                                    rotation=carla.Rotation(roll=0,pitch=0,yaw=np.rad2deg(yaw))))
+            if vehicle.control:
+                self.shutdownAutoPilot(vehicle)
+                vehicle.actor.apply_control(vehicle.control)
+
     def removeArrivedVeh(self):
         needRemoved=[]
         for veh in self.vehicles:
@@ -510,6 +520,7 @@ class Model:
     def initEgo(self):
         blueprint_library=self.world.get_blueprint_library()
         vehicle_bp = random.choice(blueprint_library.filter('vehicle.tesla.*'))
+        vehicle_bp.set_attribute('role_name','hero')
 
         if self.cfg['ego_path']!='None':
             #TODO：检查一下route的格式，解析他，设计ego_path的格式
@@ -615,15 +626,26 @@ class Model:
             if k in trajectories.keys():
                 continue
             else:
-                veh.trajectories=None
-                
+                veh.trajectory=None#TODO：虽然有bug但是每报错，难道改了汇报错吗
+    
+    def setControls(self,controls):
+        for k,v in controls.items():
+            if k==self.ego.id:
+                self.ego.control=v
+            else:
+                self.vehiclesDict[k].control=v
+        for k,veh in self.vehiclesDict.items():
+            if k in controls:
+                continue
+            else:
+                veh.control=None
 
     def exportSce(self):
         if not self.tpStart:
             return None,None
         vehicles = {
             'egoCar': self.ego.export2Dict(self.roadgraph),
-            'carInAoI': [av.export2Dict(self.roadgraph) for av in self.vehINAoI.values()]+[self.ego.export2Dict(self.roadgraph)],
+            'carInAoI': [av.export2Dict(self.roadgraph) for av in self.vehINAoI.values()],
             'outOfAoI': [sv.export2Dict(self.roadgraph) for sv in self.outOfAoI.values()]
         }
         return self.roadgraph,vehicles
@@ -632,16 +654,16 @@ class Model:
         for veh in self.vehicles:
             try:
                 if not veh.available_lanes and veh.route:
-                    veh.available_lanes=model.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+                    veh.available_lanes=self.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
                 if veh.available_lanes and veh.route:
-                        veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
+                        veh.next_available_lanes = veh.get_available_lanes(self.roadgraph)#help localization and egoplan
             except:
                 self.resetRoute(veh)
-                veh.available_lanes=model.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
-                veh.next_available_lanes = veh.get_available_lanes(model.roadgraph)#help localization and egoplan
+                veh.available_lanes=self.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+                veh.next_available_lanes = veh.get_available_lanes(self.roadgraph)#help localization and egoplan
         
     def record_result(self, start_time: float, result: bool, reason: str = "", error: Exception = None) -> None:
-        conn = sqlite3.connect(model.dataBase)
+        conn = sqlite3.connect(self.dataBase)
         cur = conn.cursor()
         # add result data
         cur.execute(

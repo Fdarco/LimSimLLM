@@ -41,13 +41,17 @@ class Vehicle:
         self.state:State=State(x = start_waypoint.transform.location.x, y = start_waypoint.transform.location.y, yaw = start_waypoint.transform.location.z) # current state of the vehicle
         self.lane_id: str =None
 
-        self.length = self.actor.bounding_box.extent.x * 2 # vehicle length#
-        self.width = self.actor.bounding_box.extent.y * 2# vehicle width#
-        self.behaviour = Behaviour(8) # default bahaviour
+        self.length = self.actor.bounding_box.extent.x * 2 #vehicle length
+        self.width = self.actor.bounding_box.extent.y * 2 #vehicle width
+        self.height = self.actor.bounding_box.extent.z * 2 #vehicle height
+
+        self.behaviour = Behaviour(8) # default bahaviour:IDLE
 
         self.trajectory: Trajectory = None # vehicle trajectory
         self.next_available_lanes = set() # next available lanes, just include the available lanes in forward looking distance
         self.dbtrajectory =None
+
+        self.control:carla.VehicleControl = None
 
         self.isAutoPilot=False
 
@@ -62,6 +66,9 @@ class Vehicle:
         self.lanePosQ = deque(maxlen=100)
         self.routeIdxQ = deque(maxlen=100)
 
+        self.vxQ=deque(maxlen=100)
+        self.vyQ=deque(maxlen=100)
+        
     def exportVRD(self) -> VRD:
         if self.trajectory and self.trajectory.xQueue:
             return VRD(
@@ -103,9 +110,14 @@ class Vehicle:
             'speedQ': self.speedQ, 'accelQ': self.accelQ,
             'laneIDQ': self.laneIDQ, 'lanePosQ': self.lanePosQ,
             'availableLanes': [] if not self.route else self.get_available_lanes(roadgraph),
-            'routeIdxQ': self.routeIdxQ, 'width': self.width,
+            'routeIdxQ': self.routeIdxQ, 
+            'width': self.width,
             'length':self.length,
-            'isAutoPilot':self.isAutoPilot
+            'height':self.height,
+            'isAutoPilot':self.isAutoPilot,
+            #for nuplan obs 
+            "vx":self.vxQ,
+            "vy":self.vyQ,
         }
 
     def get_available_lanes(self, roadgraph: RoadGraph) -> Set[str]:

@@ -1,4 +1,5 @@
-map_name: Town06
+map_name: Town01
+delta_seconds: 0.1
 ego_path: None
 rebuild_roadgraph: False
 updateInterval: 10

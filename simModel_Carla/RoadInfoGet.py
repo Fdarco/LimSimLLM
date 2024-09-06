@@ -2,7 +2,6 @@
 Get road information from carla map
 """
 import sys
-sys.path.append("/home/PJLAB/zhongnaiting/Downloads/CARLA_0.9.15/PythonAPI/carla")
 
 import carla
 from agents.navigation.global_route_planner import GlobalRoutePlanner

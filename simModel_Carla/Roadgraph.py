@@ -317,7 +317,7 @@ class RoadGraph:
                     lane_count+=1
             roadgraphRenderData.edges[eid] = ERD(eid, lane_count)
 
-        #TODO:需要读取交通信号灯，并将其和junctionlane关联起来
+        
         for jid,junction_lane in self.Junction_Dict.items():
             tls=junction_lane.currTlState
             try:
