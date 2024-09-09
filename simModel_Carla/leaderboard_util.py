@@ -1,5 +1,5 @@
 from scenario_runner.srunner.scenariomanager.carla_data_provider import CarlaDataProvider
-from Model import Model
+from simModel_Carla.Model import Model
 from Roadgraph import RoadGraph
 from vehicle import Vehicle
 from agents.navigation.global_route_planner import GlobalRoutePlanner

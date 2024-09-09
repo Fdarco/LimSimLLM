@@ -92,6 +92,9 @@ class TrafficManager:
         carlaRoadgraph=roadgraph
         roadgraph=carlaRoadGraphWrapper(roadgraph)
 
+        ego_id = vehicles_info.get("egoCar")["id"]
+        self.ego_id=ego_id
+        
         # Perception module
         vehicles = self.extract_vehicles(vehicles_info, roadgraph, T,
                                          through_timestep, self.model.sim_mode)
@@ -109,7 +112,6 @@ class TrafficManager:
 
         # make sure ego car exists when EGO_PLANNER is used
         if self.config["EGO_PLANNER"]:
-            ego_id = vehicles_info.get("egoCar")["id"]
             if ego_id is None:
                 raise ValueError("Ego car is not found when EGO_PLANER is used.")
 
@@ -121,7 +123,7 @@ class TrafficManager:
                     vehicle.update_behaviour(roadgraph)
                 except Exception as e:
                     logging.error(f"Error when updating behaviour of vehicle {vehicle_id}: {e}")
-            if vehicle.vtype == VehicleType.EGO:
+            if vehicle.vtype == VehicleType.EGO and self.config["EGO_PLANNER"]:
                 try:
                     vehicle.update_behaviour(roadgraph)
                 except Exception as e:
@@ -147,7 +149,7 @@ class TrafficManager:
                                                        T=T, config=self.config)
 
         # default: use the ego_planner, in trafficManager/planner/ego_vehicle_planner.py
-        if self.config["EGO_PLANNER"]:
+        if self.config["EGO_PLANNER"] and self.config['EGO_CONTROL']:
             ego_path = self.ego_planner.plan(vehicles[ego_id], carlaRoadgraph, None, current_time_step)
             vehicles[ego_id].behaviour = ego_behaviour
             result_paths[ego_id] = ego_path
@@ -155,15 +157,25 @@ class TrafficManager:
         # Update Last Seen
         output_trajectories = {}
         if other_plan:
-            self.lastseen_vehicles = dict(
-                (vehicle_id, vehicle)
-                for vehicle_id, vehicle in vehicles.items()
-                if vehicle.vtype != VehicleType.OUT_OF_AOI)
+            if self.config['EGO_CONTROL']:
+                self.lastseen_vehicles = dict(
+                    (vehicle_id, vehicle)
+                    for vehicle_id, vehicle in vehicles.items()
+                    if vehicle.vtype != VehicleType.OUT_OF_AOI)
+            else:
+                self.lastseen_vehicles = dict(
+                    (vehicle_id, vehicle)
+                    for vehicle_id, vehicle in vehicles.items()
+                    if vehicle.vtype == VehicleType.IN_AOI)
         else:
-            self.lastseen_vehicles = dict(
-                (vehicle_id, vehicle)
-                for vehicle_id, vehicle in vehicles.items()
-                if vehicle.vtype == VehicleType.EGO)
+            if self.config['EGO_CONTROL']:
+                self.lastseen_vehicles = dict(
+                    (vehicle_id, vehicle)
+                    for vehicle_id, vehicle in vehicles.items()
+                    if vehicle.vtype == VehicleType.EGO)
+            else:
+                self.lastseen_vehicles=dict()
+        #TODO:改lastseen的逻辑
         for vehicle_id, trajectory in result_paths.items():
             self.lastseen_vehicles[vehicle_id].trajectory = trajectory
             output_trajectories[vehicle_id] = data_copy.deepcopy(trajectory)
@@ -274,7 +286,7 @@ class TrafficManager:
             return None
 
         ego_id = ego_info["id"]
-        if ego_id in self.lastseen_vehicles and \
+        if ego_id in self.lastseen_vehicles and self.config['EGO_CONTROL'] and \
                 len(self.lastseen_vehicles[ego_id].trajectory.states) > through_timestep:
             last_state = self.lastseen_vehicles[ego_id].trajectory.states[
                 through_timestep]
