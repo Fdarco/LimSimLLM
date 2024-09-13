@@ -53,6 +53,22 @@ class RoadInfoGet:
         
         # 获得所有的junction_lane
         self.get_connect()
+        
+        self.update_lane()
+    
+    def update_lane(self):
+        """update relationship in lane
+        """
+        for nid,normal_lane in self.roadgraph.NormalLane_Dict.items():
+            if normal_lane.next_lane:
+                normal_lane.next_lane_id=self.roadgraph.WP2Lane[normal_lane.next_lane]
+            if normal_lane.previous_lane:
+                normal_lane.previous_lane_id=self.roadgraph.WP2Lane[normal_lane.previous_lane]
+        for jid,junction_lane in self.roadgraph.Junction_Dict.items():
+            if junction_lane.previous_lane:
+                junction_lane.previous_lane_id=self.roadgraph.WP2Lane[junction_lane.previous_lane]
+            if junction_lane.next_lane:
+                junction_lane.next_lane_id=self.roadgraph.WP2Lane[junction_lane.next_lane]
                 
 
     def create_edge(self, edge_id: str, wp: carla.Waypoint)->List[carla.Waypoint]:
@@ -304,7 +320,6 @@ class RoadInfoGet:
             else:
                 self.roadgraph.Normal2Junction[previous_lane_id].append(junction_lane.id)
             
-
 if __name__ == '__main__':
     # -------------------- example ------------------- #
     client = carla.Client('localhost', 2000)

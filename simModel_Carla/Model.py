@@ -98,6 +98,13 @@ class Model:
         self.QAQ = QAQueue(5)
 
         self.imageExtractor=nuScenesImageExtractor()
+        
+        #collision state
+        self.collision=False
+        self.laneInvation=False
+
+        self.collision_opponent=None
+        self.laneInvationType=None
 
         # tpStart marks whether the trajectory planning is started,
         # when the ego car appears in the network, tpStart turns into 1.
@@ -137,7 +144,7 @@ class Model:
         cur = conn.cursor()
         cur.execute(
             insertQuery,
-            (currTime, self.ego.id, '')
+            (currTime, self.ego.id, self.cfg['map_name'])#用于回放载入路网
         )
 
         conn.commit()
@@ -287,11 +294,23 @@ class Model:
             self.updateAvailableLane()
 
             self.putVehicleINFO()
+            self.putTrafficLightINFO()
         else:
             if self.tpStart:
                 print('[cyan]The ego car has reached the destination.[/cyan]')
                 self.tpEnd = 1
-
+    
+    def putTrafficLightINFO(self):
+        # update all traffic lights junction states in the network
+        for jid,junction_lane in self.roadgraph.Junction_Dict.items():
+            if junction_lane.traffic_light==None:
+                continue
+            tls=junction_lane.currTlState
+            self.dbBridge.putData(
+                'trafficLightStates',
+                (self.timeStep, jid,tls)
+            )
+    
     def getVehInfo(self,vehicle:Vehicle):
         if vehicle.id not in self.allvTypes:
             vtins=vehType(str(vehicle.id))
@@ -400,7 +419,7 @@ class Model:
             'frameINFO',
             (
                 self.timeStep, vid, vtag, veh.state.x, veh.state.y, veh.state.yaw, veh.speedQ[-1],
-                veh.accelQ[-1], veh.lane_id, veh.state.s, veh.routeIdxQ[-1]
+                veh.accelQ[-1], veh.lane_id, veh.state.s, veh.routeIdxQ[-1],','.join(veh.next_available_lanes)
             )
         )
 
@@ -539,15 +558,36 @@ class Model:
         route, end_waypoint = self.randomRoute(start_waypoint)
         vehicle = Vehicle(actor, start_waypoint, end_waypoint, self.vehicleVisbleRange, route)
         vehicle.get_route(self.carla_map, self.roadgraph)
+        
+        #添加碰撞传感器
+        collision_sensor=self.world.spawn_actor(self.world.get_blueprint_library().find("sensor.other.collision"),carla.Transform(),attach_to=actor)
+        laneInvasion_sensor=self.world.spawn_actor(self.world.get_blueprint_library().find("sensor.other.lane_invasion"),carla.Transform(),attach_to=actor)
+        collision_sensor.listen(lambda event:self.violationState(event))
+        laneInvasion_sensor.listen(lambda event:self.violationState(event))
+        
         return vehicle,actor.id
 
+    def violationState(self,event):
+        if event:
+            if isinstance(event,carla.CollisionEvent):
+                self.collision=True
+                other_actor=event.other_actor
+                self.collision_opponent=other_actor.id
+                self.tpEnd=1
+            elif isinstance(event,carla.LaneInvasionEvent):
+                self.laneInvation=True
+                self.laneInvationType=event.crossed_lane_markings[0].type
+                self.tpEnd=1
+                
+    
     def initVehicles(self):
         blueprint_library=self.world.get_blueprint_library()
 
         spawn_points = self.createSpawnPoints(self.cfg['init']['veh_num'])
         for i in range(self.cfg['init']['veh_num']):
             try:
-                vehicle_bp = random.choice(blueprint_library.filter('vehicle.mercedes.*'))
+                blueprint_garage=['vehicle.mercedes.*','vehicle.audi.*','vehicle.bmw.*']
+                vehicle_bp = random.choice(blueprint_library.filter(random.choice(blueprint_garage)))
                 actor=self.world.spawn_actor(vehicle_bp, spawn_points[i])
                 self.v_actors[actor.id]=actor
             except RuntimeError:
@@ -665,6 +705,10 @@ class Model:
     def record_result(self, start_time: float, result: bool, reason: str = "", error: Exception = None) -> None:
         conn = sqlite3.connect(self.dataBase)
         cur = conn.cursor()
+        if self.collision:
+            reason+=f'collision happened with {self.collision_opponent}'
+        if self.laneInvation:
+            reason+=f'laneInvation happened with {self.laneInvationType}'
         # add result data
         cur.execute(
             """INSERT INTO resultINFO (

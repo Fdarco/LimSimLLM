@@ -101,7 +101,7 @@ class Vehicle:
         self.state.s, _=roadgraph.get_lane_by_id(self.lane_id).course_spline.cartesian_to_frenet1D(
             self.state.x, self.state.y)
 
-    def export2Dict(self,roadgraph):
+    def export2Dict(self,roadgraph:RoadGraph):
         if not self.available_lanes and self.route:
             self.available_lanes=roadgraph.get_all_available_lanes(self.route,self.end_waypoint)
         return {

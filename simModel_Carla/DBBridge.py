@@ -29,6 +29,7 @@ class DBBridge:
                             laneID TEXT NOT NULL,
                             lanePos REAL NOT NULL,
                             routeIdx INT NOT NULL,
+                            nextAvailableLanes Text NOT NULL,
                             PRIMARY KEY (frame, vid));''')
 
         cur.execute('''CREATE TABLE IF NOT EXISTS vehicleINFO(

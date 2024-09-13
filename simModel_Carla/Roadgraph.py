@@ -233,6 +233,18 @@ class RoadGraph:
                 route_edge_list.append(self.Sections[self.WP2Section[(wp.road_id, wp.section_id, wp.lane_id)]].affliated_edge.id)
         
         return route_edge_list
+
+    def get_next_lane(self, lane_id: str)  -> Union[NormalLane, JunctionLane]:
+        lane = self.get_lane_by_id(lane_id)
+        if isinstance(lane, NormalLane):
+            if lane.next_lane_id:
+                # first_next_lane = list(lane.next_lanes.values())[0][0]
+                return self.get_lane_by_id(lane.next_lane_id)
+            else:
+                return None
+        elif isinstance(lane, JunctionLane):
+            return self.get_lane_by_id(lane.next_lane_id)
+        return None
     
     def wp_transform(self,carla_map):
         """

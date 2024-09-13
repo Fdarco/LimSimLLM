@@ -123,7 +123,7 @@ class TrafficManager:
                     vehicle.update_behaviour(roadgraph)
                 except Exception as e:
                     logging.error(f"Error when updating behaviour of vehicle {vehicle_id}: {e}")
-            if vehicle.vtype == VehicleType.EGO and self.config["EGO_PLANNER"]:
+            if vehicle.vtype == VehicleType.EGO and self.config["EGO_PLANNER"]:#这里需要加EGO_PLANNER吗
                 try:
                     vehicle.update_behaviour(roadgraph)
                 except Exception as e:
@@ -157,25 +157,16 @@ class TrafficManager:
         # Update Last Seen
         output_trajectories = {}
         if other_plan:
-            if self.config['EGO_CONTROL']:
                 self.lastseen_vehicles = dict(
                     (vehicle_id, vehicle)
                     for vehicle_id, vehicle in vehicles.items()
                     if vehicle.vtype != VehicleType.OUT_OF_AOI)
-            else:
-                self.lastseen_vehicles = dict(
-                    (vehicle_id, vehicle)
-                    for vehicle_id, vehicle in vehicles.items()
-                    if vehicle.vtype == VehicleType.IN_AOI)
         else:
-            if self.config['EGO_CONTROL']:
-                self.lastseen_vehicles = dict(
-                    (vehicle_id, vehicle)
-                    for vehicle_id, vehicle in vehicles.items()
-                    if vehicle.vtype == VehicleType.EGO)
-            else:
-                self.lastseen_vehicles=dict()
-        #TODO:改lastseen的逻辑
+            self.lastseen_vehicles = dict(
+                (vehicle_id, vehicle)
+                for vehicle_id, vehicle in vehicles.items()
+                if vehicle.vtype == VehicleType.EGO)
+            
         for vehicle_id, trajectory in result_paths.items():
             self.lastseen_vehicles[vehicle_id].trajectory = trajectory
             output_trajectories[vehicle_id] = data_copy.deepcopy(trajectory)
@@ -187,6 +178,9 @@ class TrafficManager:
         logging.info(f"Current frame: {current_time_step}. One loop Time: {time.time() - start}")
         logging.info("------------------------------")
 
+        if not self.config['EGO_CONTROL']:
+            del output_trajectories[self.ego_id]
+        
         return output_trajectories
 
     def extract_history_tracks(self, current_time_step: int,
@@ -286,7 +280,7 @@ class TrafficManager:
             return None
 
         ego_id = ego_info["id"]
-        if ego_id in self.lastseen_vehicles and self.config['EGO_CONTROL'] and \
+        if ego_id in self.lastseen_vehicles and \
                 len(self.lastseen_vehicles[ego_id].trajectory.states) > through_timestep:
             last_state = self.lastseen_vehicles[ego_id].trajectory.states[
                 through_timestep]

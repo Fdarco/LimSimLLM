@@ -77,6 +77,8 @@ class AbstractLane(ABC):
     course_spline: Spline2D = None
     id: str = None
     wp_list = []
+    next_lane_id:str=0
+    previous_lane_id:str=0
 
     @cached_property
     def length(self):

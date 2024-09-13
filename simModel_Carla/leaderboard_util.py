@@ -21,7 +21,6 @@ def initDataProvider(model:Model):
         CarlaDataProvider.set_traffic_manager_port(model.tm_port)
         CarlaDataProvider.set_world(model.world)
         # CarlaDataProvider.set_random_seed(args.traffic_manager_seed)
-        #TODO:确定一下是否需要注册背景车的信息
         CarlaDataProvider._carla_actor_pool[model.ego.actor.id]=model.ego.actor
         CarlaDataProvider.register_actor(model.ego.actor,model.ego.actor.get_transform())
 

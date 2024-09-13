@@ -49,8 +49,6 @@ if __name__=='__main__':
     gui = GUI(model)
     gui.start()
 
-    model.record_result(total_start_time, True, None)
-
     while not model.tpEnd:
         model.moveStep()
         if model.shouldUpdate():
@@ -63,7 +61,6 @@ if __name__=='__main__':
             except:
                 trajectories=dict()
 
-            #TODO:把为什么ego有轨迹解决了
             model.setTrajectories(trajectories)
 
             print(model.ego.lane_id)
@@ -74,6 +71,7 @@ if __name__=='__main__':
                 if veh.trajectory:
                     for state in veh.trajectory.states:
                         world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
+        
         #PDM model
         timestamp = CarlaDataProvider.get_world().get_snapshot().timestamp
         GameTime.on_carla_tick(timestamp)
@@ -81,8 +79,7 @@ if __name__=='__main__':
         ego_action = pdm()
         controls={model.ego.id:ego_action}
         model.setControls(controls)
-
-        model.updateVeh()#TODO:control每个几次更新一次会不会有问题
+        model.updateVeh()
 
     #according to collision sensor
     model.record_result(total_start_time, True, None)
