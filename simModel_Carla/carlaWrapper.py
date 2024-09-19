@@ -80,7 +80,7 @@ class carlaNormalLaneWrapper(rd.NormalLane):
         self.next_lanes= {}
         self.width=lane.width
         self.affiliated_edge=carlaEdgeWrapper(self.lane.affiliated_section.affliated_edge.id,rd)
-        self.speed_limit=30#TODO:how to get and what unit
+        self.speed_limit=13.83#TODO:how to get and what unit
     def left_lane(self) -> str:
         return self.lane.left_lane
     def right_lane(self) -> str:
@@ -97,7 +97,7 @@ class carlaJunctionLaneWrapper(rd.JunctionLane):
         self.course_spline=lane.course_spline
         self.next_lane_id=''
         self.affJunc=lane.id
-        self.speed_limit=30#TODO:how to get and what unit
+        self.speed_limit=13.83#TODO:how to get and what unit
         self.currTlState=lane.currTlState
 
     @property

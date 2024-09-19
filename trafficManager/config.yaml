@@ -1,8 +1,8 @@
 ANIMATION: False
 VERBOSE: False # print detailed debug message
 CSV: False # write trajectories in trajectories.csv
-EGO_PLANNER: False # whether exist an ego planner
-EGO_CONTROL: False # whether trafficmanager control egocar(in egoplanner or multiplanner)
+EGO_PLANNER: True # whether exist an ego planner
+EGO_CONTROL: True # whether trafficmanager control egocar(in egoplanner or multiplanner)
 USE_DECISION_MAKER: False # whether use decision maker results in planning module
 
 MAX_ROAD_WIDTH: 3.5 # [DEPRECATED]: maximum road width [m]

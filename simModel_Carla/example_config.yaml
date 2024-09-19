@@ -5,10 +5,10 @@ rebuild_roadgraph: False
 updateInterval: 10
 deArea: 50
 max_veh_num: 20
-carlaImage: False
+carlaImage: True
 vehicleSpawnInterval: 50
 vehicleVisibleRange: 100
 vehicleCheckRange: 50
 init:
   veh_num: 10
-  travel_distance: 2000
+  travel_distance: 1000
