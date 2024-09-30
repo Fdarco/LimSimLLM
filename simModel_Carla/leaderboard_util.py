@@ -3,6 +3,7 @@ from simModel_Carla.Model import Model
 from Roadgraph import RoadGraph
 from vehicle import Vehicle
 from agents.navigation.global_route_planner import GlobalRoutePlanner
+from agents.navigation.local_planner import RoadOption
 import xml.etree.ElementTree as ET
 import numpy as np
 from scenario_runner.srunner.scenariomanager.timer import GameTime
@@ -53,6 +54,7 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=1.0):
             gps_route.append((gps_coord, connection))
 
     return gps_route, route
+
 
 def _get_latlon_ref(world):
     """

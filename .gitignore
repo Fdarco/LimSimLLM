@@ -206,3 +206,7 @@ reflection.json
 experiments/
 *.sh
 demo/
+
+E2ESAVE/
+
+*.tar

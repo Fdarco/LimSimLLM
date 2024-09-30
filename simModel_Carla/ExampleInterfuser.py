@@ -10,7 +10,7 @@ import random
 from dataclasses import field
 from datetime import datetime
 import os
-from AD_algo.pdm_lite.autopilot import AutoPilot
+from AD_algo.Interfuser.interfuser_agent import InterfuserAgent
 from scenario_runner.srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from scenario_runner.srunner.scenariomanager.timer import GameTime
 from leaderboard_util import initDataProvider,route_transform,setup_sensors
@@ -35,8 +35,10 @@ if __name__=='__main__':
     #DATAPROVIDER Initiate
     initDataProvider(model)#CarlaDataProvider的记录actor只能记录调用他的方法生成的actor，导致无法与ego连接，新写一个函数
     GameTime.restart()
-    #PDM settup
-    pdm=AutoPilot(os.path.abspath(__file__),model.cfg['map_name'])
+    
+    #Interfuser Agent settup
+    path_to_config=os.path.join('AD_algo/Interfuser','interfuser_config.py')
+    interfuser=InterfuserAgent(path_to_config)
     gps_route,route=route_transform(model.roadgraph,model.ego)
     
     # world=model.world
@@ -49,15 +51,12 @@ if __name__=='__main__':
     # settings.fixed_delta_seconds = None
     # world.apply_settings(settings)    
     
-    
     # for item in model.roadgraph.Edges.items():
     #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
     
-    pdm.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm
-    pdm.setup(os.path.abspath(__file__),model.cfg['map_name'])
+    interfuser.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm
+    interfuser.setup(path_to_config)
     setup_sensors(pdm,model.ego.actor)
-
-    
 
     gui = GUI(model)
     gui.start()

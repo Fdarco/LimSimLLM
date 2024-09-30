@@ -356,7 +356,7 @@ class RoadGraph:
         """获取当前和当前lane连接的下一个available lane
 
         Args:
-            roadgraph (RoadGraph): 路网信息
+            available_lanes(set): next available_lanes
             lane_id (str): current lane id
 
         Returns:
@@ -378,7 +378,7 @@ class RoadGraph:
 
         # 如果是junction lane，则直接查找和他相连的lane
         elif isinstance(lane, JunctionLane):
-            next_lane_id = self.WP2Lane[lane.next_lane]
+            next_lane_id = lane.next_lane_id
             if next_lane_id in available_lanes:
                 return self.get_lane_by_id(next_lane_id)
         return None
@@ -502,3 +502,73 @@ class RoadGraph:
 
         print('[green bold]Network information commited at {}.[/green bold]'.format(
             datetime.now().strftime('%H:%M:%S.%f')[:-3]))
+    
+    def calcaulate_cur_edge_remain_length(self,curLC,lane_id) -> float:
+        """计算当前edge的剩余长度，包含junction lane的长度
+
+        Args:
+            roadgraph (RoadGraph): 路网信息
+
+        Returns:
+            float: edge的长度
+        """
+        cur_lane = self.get_lane_by_id(lane_id)
+        if isinstance(cur_lane, NormalLane):
+            cur_section = cur_lane.affiliated_section
+            cur_edge = cur_section.affliated_edge
+            
+            s,d=cur_lane.course_spline.cartesian_to_frenet1D(curLC.x, curLC.y)
+            length = cur_lane.length - s
+            cur_index = cur_edge.section_list.index(cur_section.id)
+            # section的index是从 [最远的一个section，它的index为0] 开始的
+            for index in range(0, cur_index):
+                section_index = cur_edge.section_list[index]
+                section = self.Sections[section_index]
+                lane_length=0
+                for lane_id in section.lanes.values():
+                    lane = self.NormalLane_Dict[lane_id]
+                    lane_length += lane.length
+                length += lane_length/section.lane_num
+            return length
+        return 0
+    
+    
+    def get_available_lanes(self,available_lanes,curLC:carla.Location,lane_id: str) -> Set[str]:
+        """根据当前车辆的lane以及visiable_distance，获取当前车辆可见范围内的lane信息(PS: 只考虑到本edge和下一个edge的情况),next_available_lanes
+
+        Args:
+            roadgraph (RoadGraph): 路网信息
+
+        Returns:
+            Set[str]: 当前edge/intersection和下一段的available lane_id
+        """
+        lane = self.get_lane_by_id(lane_id)
+        if isinstance(lane, NormalLane):
+            cur_section = lane.affiliated_section
+            cur_edge = cur_section.affliated_edge
+            remain_distance = self.calcaulate_cur_edge_remain_length(curLC,lane_id)
+            # if the remain distance is larger than the visible distance, then the vehicle can drive on the all available lanes
+            if 100 <= remain_distance+5:#in case of when vehicle from junction to edge and cant find available lane
+                output = set()
+                for _, values in available_lanes[cur_edge.id]["available_lane"].items():
+                    output.update([lane.id for lane in values])
+                return output
+            # if the remain distance is less than the visible distance, then the vehicle can only drive on the change lane and junction lane
+            else:
+                output = set()
+                for _, values in available_lanes[cur_edge.id]["change_lane"].items():
+                    output.update([lane.id for lane in values])
+                output.update([lane.id for lane in available_lanes[cur_edge.id]["junction_lane"]])
+                return output
+            
+        elif isinstance(lane, JunctionLane):
+            cur_edge = self.Edges[lane.incoming_edge_id]
+            next_edge = self.Edges[lane.outgoing_edge_id]
+            output = set()
+            output.update([lane.id for lane in available_lanes[cur_edge.id]["junction_lane"]])
+            for _, values in available_lanes[next_edge.id]["available_lane"].items():
+                output.update([lane.id for lane in values])
+            return output
+            
+            
+        raise ValueError("cannot find next available lane")
