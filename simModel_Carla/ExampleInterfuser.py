@@ -1,3 +1,10 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import timm
+import argparse
+from argparse import RawTextHelpFormatter
 from utils.load_config import load_config
 from ego_vehicle_planning import LLMEgoPlanner
 from simModel_Carla.MPGUI import GUI
@@ -9,22 +16,35 @@ from math import sqrt
 import random
 from dataclasses import field
 from datetime import datetime
-import os
 from AD_algo.Interfuser.interfuser_agent import InterfuserAgent
 from scenario_runner.srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from scenario_runner.srunner.scenariomanager.timer import GameTime
 from leaderboard_util import initDataProvider,route_transform,setup_sensors
 
 if __name__=='__main__':
-
+    description = "limsim evaluation: evaluate your Agent in limsim Carla\n"
+    
+    parser = argparse.ArgumentParser(description=description, formatter_class=RawTextHelpFormatter)
+    parser.add_argument('--host', default='localhost',
+                        help='IP of the host server (default: localhost)')
+    parser.add_argument('--port', default='3000', help='TCP port to listen to (default: 3000)')
+    parser.add_argument('--trafficManagerPort', default='1112',
+                        help='Port to use for the TrafficManager (default: 1112)')
+    
+    parser.add_argument('--random_seed', default='1121102',
+                        help='scene_rollout_randomseed')
+    parser.add_argument('--database', default=None,
+                    help='simulation data file name')
+    arguments = parser.parse_args()
+    
     config_name='./simModel_Carla/example_config.yaml'
-    random.seed(112102)
+    random.seed(int(arguments.random_seed))
 
     stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')    
-    database = 'results/' + stringTimestamp + '.db'
+    database=f'results/{arguments.database}/'+arguments.database+'.db' if arguments.database else 'results/' + stringTimestamp + '.db'
     total_start_time = time.time()
 
-    model:Model=Model(cfgFile=config_name,dataBase=database)
+    model:Model=Model(cfgFile=config_name,dataBase=database,port=int(arguments.port),tm_port=int(arguments.trafficManagerPort))
 
     planner = TrafficManager(model)
 
@@ -37,30 +57,36 @@ if __name__=='__main__':
     GameTime.restart()
     
     #Interfuser Agent settup
+    model_names= timm.list_models()
     path_to_config=os.path.join('AD_algo/Interfuser','interfuser_config.py')
     interfuser=InterfuserAgent(path_to_config)
     gps_route,route=route_transform(model.roadgraph,model.ego)
     
     # world=model.world
+    # idx=0
     # for wp in route:
-    #     world.debug.draw_point(wp[0].location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
-    # world.debug.draw_point(route[-1][0].location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=5)
+    #     # world.debug.draw_point(wp[0].location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
+    #     world.debug.draw_string(wp[0].location,str(idx), color=carla.Color(r=0, g=0, b=255), life_time=5000)
+    #     idx+=1
+    # # world.debug.draw_point(route[-1][0].location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=5)
     
     # settings = world.get_settings()
     # settings.synchronous_mode = False
     # settings.fixed_delta_seconds = None
     # world.apply_settings(settings)    
+    # breakpoint()
     
     # for item in model.roadgraph.Edges.items():
     #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
     
     interfuser.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm
-    interfuser.setup(path_to_config)
-    setup_sensors(pdm,model.ego.actor)
+    # interfuser.setup(path_to_config)
+    setup_sensors(interfuser,model.ego.actor)
+    
+    # gui = GUI(model)
+    # gui.start()
 
-    gui = GUI(model)
-    gui.start()
-
+    # breakpoint()
     while not model.tpEnd:
         model.moveStep()
         if model.shouldUpdate():
@@ -70,6 +96,9 @@ if __name__=='__main__':
                 trajectories = planner.plan(
                     model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
                 )
+                if model.ego_id in trajectories:
+                    print('ego planned',end=' ')
+                del trajectories[model.ego_id]
             except:
                 trajectories=dict()
 
@@ -84,11 +113,11 @@ if __name__=='__main__':
                     for state in veh.trajectory.states:
                         world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
         
-        #PDM model
+        #Interfuser model
         timestamp = CarlaDataProvider.get_world().get_snapshot().timestamp
         GameTime.on_carla_tick(timestamp)
         CarlaDataProvider.on_carla_tick()#主要更新内部记录的状态数据
-        ego_action = pdm()
+        ego_action = interfuser()
         controls={model.ego.id:ego_action}
         model.setControls(controls)
         model.updateVeh()
@@ -97,6 +126,6 @@ if __name__=='__main__':
     model.record_result(total_start_time, True, None)
 
     model.destroy()
-    gui.terminate()
-    gui.join()
+    # gui.terminate()
+    # gui.join()
 

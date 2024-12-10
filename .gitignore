@@ -204,9 +204,13 @@ simInfo/test
 reflection.json
 
 experiments/
-*.sh
+
 demo/
 
 E2ESAVE/
 
+*.h5
+
 *.tar
+
+*.zip 

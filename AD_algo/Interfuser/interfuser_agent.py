@@ -15,13 +15,13 @@ from PIL import Image
 from easydict import EasyDict
 
 from torchvision import transforms
-import autonomous_agent
+import AD_algo.Interfuser.autonomous_agent as autonomous_agent
 from timm.models import create_model
-from utils import lidar_to_histogram_features, transform_2d_points
-from planner import RoutePlanner
-from interfuser_controller import InterfuserController
-from render import render, render_self_car, render_waypoints
-from tracker import Tracker
+from AD_algo.Interfuser.utils import lidar_to_histogram_features, transform_2d_points
+from AD_algo.Interfuser.planner import RoutePlanner
+from AD_algo.Interfuser.interfuser_controller import InterfuserController
+from AD_algo.Interfuser.render import render, render_self_car, render_waypoints
+from AD_algo.Interfuser.tracker import Tracker
 
 import math
 import yaml
@@ -31,8 +31,10 @@ try:
 except ImportError:
     raise RuntimeError("cannot import pygame, make sure pygame package is installed")
 
-
+#TODO:SAVE_PATH set None
 SAVE_PATH = os.environ.get("SAVE_PATH", 'eval')
+SAVE_PATH = "/data/limsim-o/LimSimLLM/E2ESAVE"
+# SAVE_PATH = None
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
 
@@ -217,7 +219,8 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
         self.save_path = None
         if SAVE_PATH is not None:
             now = datetime.datetime.now()
-            string = pathlib.Path(os.environ["ROUTES"]).stem + "_"
+            # string = pathlib.Path(os.environ["ROUTES"]).stem + "_"
+            string='Town06'
             string += "_".join(
                 map(
                     lambda x: "%02d" % x,
@@ -466,7 +469,9 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
         stop_sign = self.softmax(stop_sign).detach().cpu().numpy().reshape(-1)[0]
 
 
-        if self.step % 2 == 0 or self.step < 4:
+        if self.step % 2 == 0: #or self.step < 4:
+            # breakpoint()
+            print(f'run_step:{self.step}')
             traffic_meta = self.tracker.update_and_predict(traffic_meta.reshape(20, 20, -1), tick_data['gps'], tick_data['compass'], self.step // 2)
             traffic_meta = traffic_meta.reshape(400, -1)
             self.traffic_meta_moving_avg = (
@@ -486,6 +491,7 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
             stop_sign,
             self.traffic_meta_moving_avg,
         )
+        print(f'steer:{steer} throttle:{throttle} brake:{brake}')
 
         if brake < 0.05:
             brake = 0.0
@@ -496,6 +502,7 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
         control.steer = float(steer)
         control.throttle = float(throttle)
         control.brake = float(brake)
+        # breakpoint()
 
         surround_map, box_info = render(traffic_meta.reshape(20, 20, 7), pixels_per_meter=20)
         surround_map = surround_map[:400, 160:560]
@@ -575,6 +582,7 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
 
         if SAVE_PATH is not None:
             self.save(tick_data)
+            print('saved')
 
         return control
 

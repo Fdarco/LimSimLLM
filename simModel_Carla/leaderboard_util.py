@@ -25,14 +25,17 @@ def initDataProvider(model:Model):
         CarlaDataProvider._carla_actor_pool[model.ego.actor.id]=model.ego.actor
         CarlaDataProvider.register_actor(model.ego.actor,model.ego.actor.get_transform())
 
-def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=1.0):
+def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
+    def on_same_lane(x,y):
+        return x.road_id ==y.road_id and x.section_id == y.section_id and x.lane_id==y.lane_id
     #将route idx 转换为 wplist
-    waypoints_trajectory=[]
+    waypoints_trajectory=[veh.cur_wp.transform.location]
     for idx,rid in enumerate(veh.route):
         if idx!=len(veh.route)-1:#不是最后一位的话，找到与下一个edge连接的junctionlane的起始路点
             edge=rd.Edges[rid]
             junction_lane=edge.next_edge_connect[veh.route[idx+1]]
-            waypoints_trajectory.append(rd.Junction_Dict[junction_lane[0]].wp_list[0].transform.location)
+            j_wplist=rd.Junction_Dict[junction_lane[0]].wp_list
+            waypoints_trajectory.append(rd.Junction_Dict[junction_lane[0]].wp_list[len(j_wplist)//2].transform.location)
         else:
             waypoints_trajectory.append(veh.end_waypoint.transform.location)
 
@@ -42,17 +45,60 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=1.0):
 
     route = []
     gps_route = []
-
+    count=0
     for i in range(len(waypoints_trajectory) - 1):
 
         waypoint = waypoints_trajectory[i]
         waypoint_next = waypoints_trajectory[i + 1]
         interpolated_trace = grp.trace_route(waypoint, waypoint_next)
+        idx=0
         for wp, connection in interpolated_trace:
             route.append((wp.transform, connection))
             gps_coord = _location_to_gps(lat_ref, lon_ref, wp.transform.location)
             gps_route.append((gps_coord, connection))
-
+            
+            count+=1
+            if idx!=len(interpolated_trace)-1:
+                
+                #对于全局路径中的变道部分，如果变道后的路点的s小于等于当前路点s+sample_resolution，则更改变道后的路点 
+                #先判断两个路点的关系,是否是变道
+                #还要特别处理连续变道的情况
+                waypoint=wp
+                waypoint_next = interpolated_trace[idx+1][0]
+                left_wp=waypoint.get_left_lane() if waypoint.lane_change==carla.libcarla.LaneChange.Both or waypoint.lane_change==carla.libcarla.LaneChange.Left else None
+                right_wp=waypoint.get_right_lane() if waypoint.lane_change==carla.libcarla.LaneChange.Both or waypoint.lane_change==carla.libcarla.LaneChange.Right else None
+                
+                search_count=0
+                while search_count<=1:
+                    if left_wp and on_same_lane(left_wp,waypoint_next):
+                        check_change_lane_wp=left_wp
+                    elif right_wp and on_same_lane(right_wp,waypoint_next):
+                        check_change_lane_wp=right_wp
+                    elif on_same_lane(waypoint,waypoint_next):
+                        check_change_lane_wp=wp
+                    else:
+                        #如果后续路点在当前路点的前序道路上,删除
+                        lane_end=waypoint_next.next_until_lane_end(10)[0].next(1)[0]
+                        if on_same_lane(lane_end,waypoint):
+                            del interpolated_trace[idx+1]#bug:i
+                            print('del back')
+                        check_change_lane_wp=None
+                    
+                    #如果变道后的路点纵向变化不高
+                    if check_change_lane_wp and waypoint_next.s <check_change_lane_wp.s+1:
+                        # breakpoint()
+                        # print(f'found change wp:{count}')
+                        interpolated_trace[idx+1]=(check_change_lane_wp.next(hop_resolution)[0],interpolated_trace[idx+1][1])
+                        # del interpolated_trace[i+1]
+                    search_count+=1
+                    waypoint_next=waypoint_next.next_until_lane_end(10)[0].next(1)[0]
+            idx+=1
+    for idx,wp_tulpe in enumerate(route):
+        p=idx+1
+        while p<=len(route)-1:
+            if route[p][0].location.distance(wp_tulpe[0].location)<=0.3:
+                del route[p]
+            p+=1           
     return gps_route, route
 
 
@@ -332,6 +378,10 @@ def preprocess_sensor_spec(sensor_spec):
         attributes['image_size_x'] = str(sensor_spec['width'])
         attributes['image_size_y'] = str(sensor_spec['height'])
         attributes['fov'] = str(sensor_spec['fov'])
+        attributes['lens_circle_multiplier']=str(3.0)
+        attributes['lens_circle_falloff']=str(3.0)
+        attributes['chromatic_aberration_intensity']=str(0.5)
+        attributes['chromatic_aberration_offset']=str(0)
 
         sensor_location = carla.Location(x=sensor_spec['x'], y=sensor_spec['y'],
                                             z=sensor_spec['z'])
@@ -341,12 +391,12 @@ def preprocess_sensor_spec(sensor_spec):
 
     elif type_ == 'sensor.lidar.ray_cast':
         attributes['range'] = str(85)
-        if DATAGEN==1:
-            attributes['rotation_frequency'] = str(sensor_spec['rotation_frequency'])
-            attributes['points_per_second'] = str(sensor_spec['points_per_second'])
-        else:
-            attributes['rotation_frequency'] = str(10)
-            attributes['points_per_second'] = str(600000)
+        # if DATAGEN==1:
+        # attributes['rotation_frequency'] = str(sensor_spec['rotation_frequency'])
+        # attributes['points_per_second'] = str(sensor_spec['points_per_second'])
+        # else:
+        attributes['rotation_frequency'] = str(10)
+        attributes['points_per_second'] = str(600000)
         attributes['channels'] = str(64)
         attributes['upper_fov'] = str(10)
         attributes['lower_fov'] = str(-30)
@@ -375,9 +425,9 @@ def preprocess_sensor_spec(sensor_spec):
                                             yaw=sensor_spec['yaw'])
 
     elif type_ == 'sensor.other.gnss':
-        attributes['noise_alt_stddev'] = str(0.000005)
-        attributes['noise_lat_stddev'] = str(0.000005)
-        attributes['noise_lon_stddev'] = str(0.000005)
+        # attributes['noise_alt_stddev'] = str(0.000005)
+        # attributes['noise_lat_stddev'] = str(0.000005)
+        # attributes['noise_lon_stddev'] = str(0.000005)
         attributes['noise_alt_bias'] = str(0.0)
         attributes['noise_lat_bias'] = str(0.0)
         attributes['noise_lon_bias'] = str(0.0)

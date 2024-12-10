@@ -14,17 +14,37 @@ from AD_algo.pdm_lite.autopilot import AutoPilot
 from scenario_runner.srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from scenario_runner.srunner.scenariomanager.timer import GameTime
 from leaderboard_util import initDataProvider,route_transform,setup_sensors
+import argparse
+from argparse import RawTextHelpFormatter
 
 if __name__=='__main__':
+    description = "limsim evaluation: evaluate your Agent in limsim Carla\n"
+    
+    parser = argparse.ArgumentParser(description=description, formatter_class=RawTextHelpFormatter)
+    parser.add_argument('--host', default='localhost',
+                        help='IP of the host server (default: localhost)')
+    parser.add_argument('--port', default='3000', help='TCP port to listen to (default: 3000)')
+    parser.add_argument('--trafficManagerPort', default='1112',
+                        help='Port to use for the TrafficManager (default: 1112)')
+    
+    parser.add_argument('--random_seed', default='1121102',
+                        help='scene_rollout_randomseed')
+    
+    parser.add_argument('--database', default=None,
+                    help='simulation data file name')
+    arguments = parser.parse_args()
+    
+    config_name='./simModel_Carla/example_config.yaml'
+    random.seed(int(arguments.random_seed))
 
     config_name='./simModel_Carla/example_config.yaml'
-    random.seed(112102)
+    
 
-    stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')    
-    database = 'results/' + stringTimestamp + '.db'
+    stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')
+    database=f'results/{arguments.database}/'+arguments.database+'.db' if arguments.database else 'results/' + stringTimestamp + '.db'
     total_start_time = time.time()
 
-    model:Model=Model(cfgFile=config_name,dataBase=database)
+    model:Model=Model(cfgFile=config_name,dataBase=database,port=int(arguments.port),tm_port=int(arguments.trafficManagerPort))
 
     planner = TrafficManager(model)
 
@@ -40,18 +60,22 @@ if __name__=='__main__':
     gps_route,route=route_transform(model.roadgraph,model.ego)
     
     # world=model.world
-    # for wp in route:
+    # sum_dist=0
+    # for j,wp in enumerate(route):
     #     world.debug.draw_point(wp[0].location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
-    # world.debug.draw_point(route[-1][0].location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=5)
-    
+    # # world.debug.draw_point(route[-1][0].location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=5)
+    #     sum_dist+= 0 if j==0 else route[j][0].location.distance(route[j-1][0].location)
     # settings = world.get_settings()
     # settings.synchronous_mode = False
     # settings.fixed_delta_seconds = None
-    # world.apply_settings(settings)    
+    # world.apply_settings(settings)
+    # print(model.ego.route)
+    # print(f'distance:{sum_dist}')
     
     
     # for item in model.roadgraph.Edges.items():
     #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+    # breakpoint()    
     
     pdm.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm
     pdm.setup(os.path.abspath(__file__),model.cfg['map_name'])
@@ -59,8 +83,8 @@ if __name__=='__main__':
 
     
 
-    gui = GUI(model)
-    gui.start()
+    # gui = GUI(model)
+    # gui.start()
 
     while not model.tpEnd:
         model.moveStep()
@@ -71,6 +95,9 @@ if __name__=='__main__':
                 trajectories = planner.plan(
                     model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
                 )
+                if model.ego_id in trajectories:
+                    print('ego planned',end=' ')
+                del trajectories[model.ego_id]
             except:
                 trajectories=dict()
 
@@ -92,12 +119,13 @@ if __name__=='__main__':
         ego_action = pdm()
         controls={model.ego.id:ego_action}
         model.setControls(controls)
+        print(f"{ego_action.steer},{ego_action.throttle},{ego_action.brake}")
         model.updateVeh()
 
     #according to collision sensor
     model.record_result(total_start_time, True, None)
 
     model.destroy()
-    gui.terminate()
-    gui.join()
+    # gui.terminate()
+    # gui.join()
 

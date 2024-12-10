@@ -322,9 +322,9 @@ class RoadInfoGet:
             
 if __name__ == '__main__':
     # -------------------- example ------------------- #
-    client = carla.Client('localhost', 2000)
+    client = carla.Client('localhost', 3000)
     client.set_timeout(2.0)
-    # client.load_world('Town06')
+    client.load_world('Town06')
     world = client.get_world()
     carla_map = world.get_map()
     topology = carla_map.get_topology()
@@ -348,25 +348,37 @@ if __name__ == '__main__':
     road_info_get = RoadInfoGet(roadgraph, topology) # 用RoadInfoGet去更新roadgraph
 
     from draw import draw_roadgraph
-    draw_roadgraph(roadgraph=roadgraph)
+    # draw_roadgraph(roadgraph=roadgraph)
 
-    for item in roadgraph.Edges.items():
-        world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+    # for item in roadgraph.Edges.items():
+        # world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
 
     # -------------------- test ------------------- #
     spawn_points = carla_map.get_spawn_points() # 选出适合放置车辆的位置
-    origin = carla.Location(spawn_points[20].location)
-    destination = carla.Location(spawn_points[120].location)  
+    origin = carla.Location(spawn_points[272].location)
+    destination = carla.Location(spawn_points[122].location)
+    end_waypoint=carla_map.get_waypoint(destination)
+    while end_waypoint.is_junction:
+        nxt_wps=end_waypoint.next(1)
+        end_waypoint=nxt_wps[0]
+    destination=end_waypoint.transform.location
 
-    grp = GlobalRoutePlanner(carla_map, 0.5)
+    grp = GlobalRoutePlanner(carla_map, 2)
     route = grp.trace_route(origin, destination)
     route_edge_list = roadgraph.get_route_edge(route)
     print(route_edge_list)
-
-    for wp in route:
-        world.debug.draw_point(wp[0].transform.location, color=carla.Color(r=0, g=0, b=255), life_time=50, size=0.1)
     
-    available_dict = roadgraph.get_all_available_lanes(route_edge_list, route[-1][0])
+    #------------------------choose------------------------#
+    # for idx,spwp in enumerate(carla_map.get_spawn_points()):
+    #     world.debug.draw_point(spwp.location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
+    #     world.debug.draw_string(spwp.location,str(idx), draw_shadow=False,color=carla.Color(r=255, g=0, b=0), life_time=5000)
+
+
+    for id,wp in enumerate(route):
+        # world.debug.draw_point(wp[0].transform.location, color=carla.Color(r=0, g=255, b=0), life_time=5000, size=0.1)
+        world.debug.draw_string(wp[0].transform.location,str(id) ,color=carla.Color(r=0, g=0, b=255), life_time=5000)
+
+    # available_dict = roadgraph.get_all_available_lanes(route_edge_list, route[-1][0])
 
     # # ----------------- 在carla中画出available lane ----------------- #
     # for edge_id, available_lanes in available_dict.items():
@@ -381,7 +393,7 @@ if __name__ == '__main__':
     #         for lane in lanes:
     #             world.debug.draw_line(lane.wp_list[0].transform.location, lane.wp_list[-1].transform.location, color=carla.Color(r=255, g=0, b=0), thickness=1.0, life_time=100)
     
-    for junction_lane in list(roadgraph.Junction_Dict.values()):
-        world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=0, g=0, b=255), thickness=1.0, life_time=100)
+    # for junction_lane in list(roadgraph.Junction_Dict.values()):
+        # world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=0, g=0, b=255), thickness=1.0, life_time=100)
     # for junction_lane in list(roadgraph.NormalLane_Dict.values()):
     #     world.debug.draw_line(junction_lane.start_wp.transform.location+carla.Location(z=1), junction_lane.end_wp.transform.location+carla.Location(z=1), color=carla.Color(r=255, g=0, b=255), thickness=1.0, life_time=100)

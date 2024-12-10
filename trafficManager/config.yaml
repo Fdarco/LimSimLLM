@@ -49,7 +49,7 @@ vehicle:
     length: 5 # 车长
     width: 2 #车宽
     max_accel: 2.6 # 最大加速度
-    max_decel: -4.5 #最大减速度，注意一定负号
+    max_decel: -6 #-4.5 #最大减速度，注意一定负号
     max_speed: 55 # 最大速度 m/s
     L: 2.9 # wheel base 轴距, 暂未使用
     R: 1.5 # minimum turning radius 最小转弯半径， 暂未使用

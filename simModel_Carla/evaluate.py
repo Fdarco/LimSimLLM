@@ -24,7 +24,7 @@ class Score:
         raise NotImplementedError
     
 class Evaluator:
-    def __init__(self,database:str,timeStep:float) -> None:
+    def __init__(self,database:str,timeStep:float,file_name="closeloopEvaluation_result.log") -> None:
 
         self.final_score: float = 0.0 # based on the whole decision in one route
         self.current_time = timeStep
@@ -33,7 +33,7 @@ class Evaluator:
         self.complete_percentage: float = 0.0
         
         
-        self.logger = logger.setup_app_level_logger(logger_name="Evaluation", file_name="closeloopEvaluation_result.log")
+        self.logger = logger.setup_app_level_logger(logger_name="Evaluation", file_name=file_name)
         self.logging = logging.getLogger("Evaluation").getChild(__name__)
         self.createTable(database)
         
@@ -69,8 +69,8 @@ class Evaluator:
        raise NotImplementedError
 
 class Decision_Evaluator(Evaluator):
-    def __init__(self, database: str, timeStep: float) -> None:
-        super().__init__(database, timeStep)
+    def __init__(self, database: str, timeStep: float,file_name="closeloopEvaluation_result.log") -> None:
+        super().__init__(database, timeStep,file_name)
         self.decision_score = Score_List() 
         self.hyper_parameter = Hyper_Parameter()
         self.ttc_score = []
@@ -140,9 +140,10 @@ class Decision_Evaluator(Evaluator):
             if not self.getResult(model):
                 self.decision_score.fail_result()
                 self.logger.error("the result is failed")
-                self.cal_route_length(model)
+                # self.cal_route_length(model)
                 self.CalculateDrivingMile(model)
                 self.driving_mile += model.sr.ego.lanePos
+                self.route_length=4425.694
                 print(self.driving_mile, " ", self.route_length)
             else:
                 self.route_length = self.driving_mile
@@ -156,12 +157,35 @@ class Decision_Evaluator(Evaluator):
             self.logger.info("your driving time is {} s".format((model.timeStep - self.current_time)/10))
             
         return
+    def cal_route_length(self, model: ReplayModel) -> float:
+        """calculate the target route length
 
+        Args:
+            model (ReplayModel)
+
+        Returns:
+            float: length
+        """
+        route_length = 0.0
+        _, LLRDict, _ = model.ego.getLaneLevelRoute(model.rb)
+        for edgeID, laneDict in LLRDict.items():
+            for laneType, laneIDset in laneDict.items():
+                if laneType == 'edgeLanes':
+                    laneID = laneIDset.pop()
+                    route_length += model.rb.getLane(laneID).sumo_length
+                if laneType == "junctionLanes":
+                    laneID = laneIDset.pop()
+                    route_length += model.rb.getJunctionLane(laneID).sumo_length
+        self.route_length = route_length
+        return route_length
     def getResult(self, model: ReplayModel) -> bool:
         conn = sqlite3.connect(model.dataBase)
         cur = conn.cursor()
         cur.execute("SELECT result FROM resultINFO WHERE egoID = ?;", (model.sr.ego.id,))
-        result = cur.fetchone()[0]
+        try:
+            result = cur.fetchone()[0]
+        except:
+            result=None
         conn.close()
         return result
     

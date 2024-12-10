@@ -16,6 +16,8 @@ from simInfo.CustomExceptions import (
     record_result, LaneChangeException, 
     BrainDeadlockException, TimeOutException
 )
+import imageio
+from simModel_Carla.Camera import CAMActor
 
 import carla
 from carla import Location, Rotation, Transform
@@ -37,13 +39,15 @@ from datetime import datetime
 from threading import Thread
 
 class Model:
-    def __init__(self,cfgFile: str=None,rouFile: str=None,dataBase: str=None):
+    def __init__(self,cfgFile: str=None,rouFile: str=None,dataBase: str=None,port:int=2000,tm_port:int=2006):
         # --------- config ---------#
         self.cfgFile:str=cfgFile
         self.cfg:Dict=load_config(self.cfgFile)
         self.rouFile=rouFile
         self.sim_mode: str = 'RealTime'
 
+        os.makedirs('/'.join(dataBase.split('/')[:-1]),exist_ok=True)    
+        
         if dataBase:
             self.dataBase = dataBase
         else:
@@ -52,11 +56,13 @@ class Model:
 
         if os.path.exists(self.dataBase):
             os.remove(self.dataBase)
+            
+        
         self.dbBridge = DBBridge(self.dataBase)
         self.dbBridge.createTable()
 
         # --------- init carla and roadgraph --------- #
-        self.client = carla.Client('localhost', 2000)
+        self.client = carla.Client('localhost', port)
         self.client.set_timeout(20.0)
         self.client.load_world(self.cfg['map_name'])
         self.world = self.client.get_world()
@@ -64,6 +70,7 @@ class Model:
         self.topology = self.carla_map.get_topology()
         self.spectator = self.world.get_spectator()
         self.carla_tm=None
+        self.tm_port=tm_port
 
         self.roadgraph = RoadGraph()
         self.map_cache_path=os.path.join(os.getcwd(),'simModel_Carla','map_cache', f"{self.cfg['map_name']}.pkl")
@@ -112,7 +119,8 @@ class Model:
         # tpEnd marks whether the trajectory planning is end,
         # when the ego car leaves the network, tpEnd turns into 1.
         self.tpEnd = 0
-
+        
+        self.BEV_Camera=None
     def start(self):
         # ---------- init actors --------- #
         #TODO:根据随机初始化结果输出rouFile,且思考rouFile后续如何使用
@@ -189,8 +197,8 @@ class Model:
         # self.carla_tm.set_path(vehicle.actor,route_carla)
 
     def runAutoPilot(self):
-        self.carla_tm = self.client.get_trafficmanager()
-        self.tm_port = self.carla_tm.get_port()
+        self.carla_tm = self.client.get_trafficmanager(self.tm_port)
+        # self.tm_port = self.carla_tm.get_port()
         self.carla_tm.set_synchronous_mode(True)
 
         for vehicle in self.vehicles:
@@ -253,11 +261,17 @@ class Model:
                 self.putCARLAImage()
             if not self.tpStart:
                 self.tpStart = 1
+            self.saveBEV()
 
         if self.shouldSpawnVeh():
             spawn_success=self.spawnVehicleRuntime()
             print('spawn_success:',spawn_success)
 
+    def saveBEV(self):
+        pic=self.BEV_Camera.getImage()
+        full_path='/'.join(self.dataBase.split('/')[:-1])+f'/{self.timeStep}.png'
+        imageio.imwrite(full_path,pic,compress_level=10)
+        
     def resetRoute(self,vehicle:Vehicle):
         if vehicle.lane_id in self.roadgraph.Junction_Dict.keys():
             grp = GlobalRoutePlanner(self.carla_map, 0.5)
@@ -314,9 +328,9 @@ class Model:
     def getVehInfo(self,vehicle:Vehicle):
         if vehicle.id not in self.allvTypes:
             vtins=vehType(str(vehicle.id))
-            vtins.maxAccel=5
-            vtins.maxDecel=5
-            vtins.maxSpeed=vehicle.actor.get_speed_limit()
+            vtins.maxAccel=3#为了让背景车能够正确刹车，不追尾
+            vtins.maxDecel=6
+            vtins.maxSpeed=vehicle.actor.get_speed_limit()#TODO:可能有问题，逻辑有问题
             vtins.length=vehicle.length
             vtins.width=vehicle.width
             vtins.vclass=vehicle.actor.type_id
@@ -538,16 +552,17 @@ class Model:
 
     def initEgo(self):
         blueprint_library=self.world.get_blueprint_library()
-        vehicle_bp = random.choice(blueprint_library.filter('vehicle.tesla.*'))
+        vehicle_bp = random.choice(blueprint_library.filter('vehicle.lincoln.*'))#vehicle.tesla.*
         vehicle_bp.set_attribute('role_name','hero')
 
-        if self.cfg['ego_path']!='None':
+        start_idx_sp=None
+        if self.cfg['preset_ego_route']!='None':
             #TODO：检查一下route的格式，解析他，设计ego_path的格式
-            raise NotImplementedError
-        
+            start_idx_sp,end_idx_sp=map(int,self.cfg['preset_ego_route'])
+            
         spawn_success=False
         while not spawn_success:
-            start_waypoint = self.createSpawnPoints(k=1)[0]
+            start_waypoint = self.createSpawnPoints(k=1,idx=start_idx_sp)[0]
             actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
             if actor:
                 spawn_success=True
@@ -555,7 +570,20 @@ class Model:
         self.v_actors[actor.id]=actor
 
         start_waypoint=self.carla_map.get_waypoint(actor.get_location())
-        route, end_waypoint = self.randomRoute(start_waypoint)
+        
+        if self.cfg['preset_ego_route']=='None':
+            route, end_waypoint = self.randomRoute(start_waypoint)
+        else:
+            end_waypoint=self.createSpawnPoints(k=1,idx=end_idx_sp)[0]
+            end_waypoint=self.carla_map.get_waypoint(end_waypoint.location)
+            while end_waypoint.is_junction:
+                nxt_wps=end_waypoint.next(1)
+                end_waypoint=nxt_wps[0]
+                
+            grp = GlobalRoutePlanner(self.carla_map, 0.5)
+            route_carla = grp.trace_route(start_waypoint.transform.location, end_waypoint.transform.location)
+            route = self.roadgraph.get_route_edge(route_carla)
+            
         vehicle = Vehicle(actor, start_waypoint, end_waypoint, self.vehicleVisbleRange, route)
         vehicle.get_route(self.carla_map, self.roadgraph)
         
@@ -565,9 +593,31 @@ class Model:
         collision_sensor.listen(lambda event:self.violationState(event))
         laneInvasion_sensor.listen(lambda event:self.violationState(event))
         
+        #添加俯视图相机
+        #TODO:代码移植到CAMActor.py中
+        cameraInfo = {
+            'CAM_ABOVE': {
+                'transform': carla.Transform(
+                    carla.Location(x=0, y=0, z=150),
+                    carla.Rotation(yaw=0, pitch=-90, roll=0)
+                ),
+                'fov': '70',
+                'record': False
+            }
+        }
+        for k, v in cameraInfo.items():
+            if not v['record']:
+                self.BEV_Camera = CAMActor(
+                    self.world,k,v['transform'],v['fov'],vehicle
+                )
+                v['record'] = True
+            else:
+                continue
+            
         return vehicle,actor.id
 
     def violationState(self,event):
+        print('decting collision or laneInvasion')
         if event:
             if isinstance(event,carla.CollisionEvent):
                 self.collision=True
@@ -641,10 +691,13 @@ class Model:
     def initCycles(self):
         pass
 
-    def createSpawnPoints(self,k:int)->list:
+    def createSpawnPoints(self,k:int,idx=None)->list:
         spawn_points = self.carla_map.get_spawn_points()
         assert k<= len(spawn_points)
-        randomSpawnPoints=random.sample(spawn_points,k)
+        if not idx:
+            randomSpawnPoints=random.sample(spawn_points,k)
+        else:
+            randomSpawnPoints=[spawn_points[idx]]
         return randomSpawnPoints
 
     @property

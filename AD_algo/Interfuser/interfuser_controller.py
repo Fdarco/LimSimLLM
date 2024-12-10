@@ -1,6 +1,6 @@
 import numpy as np
 from collections import deque
-from team_code.render import render, render_self_car, find_peak_box
+from AD_algo.Interfuser.render import render, render_self_car, find_peak_box
 
 class PIDController(object):
     def __init__(self, K_P=1.0, K_I=0.0, K_D=0.0, n=20):

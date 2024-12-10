@@ -1,6 +1,6 @@
 import numpy as np
 import math
-from team_code.render import find_peak_box
+from AD_algo.Interfuser.render import find_peak_box
 
 reweight_array = np.array([1.0, 3.5, 3.5, 2.0, 3.5, 2.0, 8.0])
 
