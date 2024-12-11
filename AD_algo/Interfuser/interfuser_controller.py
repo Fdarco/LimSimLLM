@@ -52,8 +52,11 @@ def collision_detections(map1, map2, threshold=0.04):
     """
     assert map1.shape == map2.shape
     overlap_map = (map1 > 0.01) & (map2 > 0.01)
-    ratio = float(np.sum(overlap_map)) / np.sum(map2 > 0)
-    ratio2 = float(np.sum(overlap_map)) / np.sum(map1 > 0)
+    try:
+        ratio = float(np.sum(overlap_map)) / np.sum(map2 > 0)
+        ratio2 = float(np.sum(overlap_map)) / np.sum(map1 > 0)
+    except:
+        return True#bug when map2 is all 0
     if ratio < threshold:
         return True
     else:

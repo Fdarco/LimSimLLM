@@ -582,7 +582,6 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
 
         if SAVE_PATH is not None:
             self.save(tick_data)
-            print('saved')
 
         return control
 

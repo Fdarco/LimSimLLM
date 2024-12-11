@@ -36,7 +36,7 @@ import dill
 import pickle
 from dataclasses import field
 from datetime import datetime
-from threading import Thread
+from threading import Thread, Lock
 
 class Model:
     def __init__(self,cfgFile: str=None,rouFile: str=None,dataBase: str=None,port:int=2000,tm_port:int=2006):
@@ -107,6 +107,8 @@ class Model:
         self.imageExtractor=nuScenesImageExtractor()
         
         #collision state
+        self.collision_sensor=None
+        self.laneInvasion_sensor=None
         self.collision=False
         self.laneInvation=False
 
@@ -119,6 +121,7 @@ class Model:
         # tpEnd marks whether the trajectory planning is end,
         # when the ego car leaves the network, tpEnd turns into 1.
         self.tpEnd = 0
+        self.tpEnd_lock = Lock()
         
         self.BEV_Camera=None
     def start(self):
@@ -141,6 +144,9 @@ class Model:
         settings.fixed_delta_seconds = self.cfg['delta_seconds']#0.1
         self.dt=self.cfg['delta_seconds']
         self.world.apply_settings(settings)
+        
+        self.collision_sensor.listen(lambda event:self.violationState(event))
+        self.laneInvasion_sensor.listen(lambda event:self.violationState(event))
         self.world.tick()
 
         self.timeStep=0
@@ -270,7 +276,7 @@ class Model:
     def saveBEV(self):
         pic=self.BEV_Camera.getImage()
         full_path='/'.join(self.dataBase.split('/')[:-1])+f'/{self.timeStep}.png'
-        imageio.imwrite(full_path,pic,compress_level=10)
+        imageio.imwrite(full_path,pic,compress_level=3)
         
     def resetRoute(self,vehicle:Vehicle):
         if vehicle.lane_id in self.roadgraph.Junction_Dict.keys():
@@ -312,7 +318,8 @@ class Model:
         else:
             if self.tpStart:
                 print('[cyan]The ego car has reached the destination.[/cyan]')
-                self.tpEnd = 1
+                with self.tpEnd_lock:
+                    self.tpEnd = 1
     
     def putTrafficLightINFO(self):
         # update all traffic lights junction states in the network
@@ -342,6 +349,7 @@ class Model:
 
         x=vehicle.state.x = actor.get_location().x
         y=vehicle.state.y = actor.get_location().y
+        z=vehicle.state.z = actor.get_location().z
         yaw=vehicle.state.yaw = np.deg2rad(actor.get_transform().rotation.yaw)
 
         #whether the vehicle is in the AoI
@@ -359,6 +367,16 @@ class Model:
                     self.outOfAoI[vehicle.id] = vehicle
 
         vehicle.lane_id,vehicle.state.s,vehicle.cur_wp=self.localization(vehicle)
+        
+        #检查ego车辆是否在正常行驶车道上
+        check_wp = self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y, z=z), project_to_road=False)
+        if vehicle.id == self.ego_id:
+            if check_wp is None or check_wp.lane_type != carla.LaneType.Driving:
+                self.laneInvation = True
+                self.laneInvationType = vehicle.cur_wp.lane_type if check_wp is None else check_wp.lane_type
+                print('Vehicle left normal driving lane')
+                with self.tpEnd_lock:
+                    self.tpEnd = 1
 
         #get route_idx
         lane=self.roadgraph.get_lane_by_id(lane_id=vehicle.lane_id)
@@ -391,7 +409,7 @@ class Model:
     def localization(self,vehicle):
         cur_lane = self.roadgraph.get_lane_by_id(vehicle.lane_id)
         cur_wp=vehicle.cur_wp if vehicle.cur_wp else self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y))
-        carla_wp=self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y))
+        carla_wp=self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y))#Default setting: wp always is on Driving lane
 
         if carla_wp.is_junction:
             junction=carla_wp.get_junction()
@@ -588,10 +606,9 @@ class Model:
         vehicle.get_route(self.carla_map, self.roadgraph)
         
         #添加碰撞传感器
-        collision_sensor=self.world.spawn_actor(self.world.get_blueprint_library().find("sensor.other.collision"),carla.Transform(),attach_to=actor)
-        laneInvasion_sensor=self.world.spawn_actor(self.world.get_blueprint_library().find("sensor.other.lane_invasion"),carla.Transform(),attach_to=actor)
-        collision_sensor.listen(lambda event:self.violationState(event))
-        laneInvasion_sensor.listen(lambda event:self.violationState(event))
+        self.collision_sensor=self.world.spawn_actor(self.world.get_blueprint_library().find("sensor.other.collision"),carla.Transform(),attach_to=actor)
+        self.laneInvasion_sensor=self.world.spawn_actor(self.world.get_blueprint_library().find("sensor.other.lane_invasion"),carla.Transform(),attach_to=actor)
+        self.world.tick()
         
         #添加俯视图相机
         #TODO:代码移植到CAMActor.py中
@@ -617,17 +634,24 @@ class Model:
         return vehicle,actor.id
 
     def violationState(self,event):
-        print('decting collision or laneInvasion')
-        if event:
+        if event and not self.tpEnd:
             if isinstance(event,carla.CollisionEvent):
-                self.collision=True
+                print('collision detected')
+                self.collision=True#TODO: after collision, the model should stop
                 other_actor=event.other_actor
                 self.collision_opponent=other_actor.id
-                self.tpEnd=1
+                with self.tpEnd_lock:
+                    self.tpEnd=1
             elif isinstance(event,carla.LaneInvasionEvent):
-                self.laneInvation=True
-                self.laneInvationType=event.crossed_lane_markings[0].type
-                self.tpEnd=1
+                marking_type = event.crossed_lane_markings[0].type
+                print('marking_type:',marking_type)
+                #TODO:when cross solid, should be punished
+                if marking_type == carla.LaneMarkingType.Grass or marking_type == carla.LaneMarkingType.Curb:
+                    self.laneInvation=True
+                    self.laneInvationType=marking_type
+                    print('laneInvasion type:',self.laneInvationType)
+                    with self.tpEnd_lock:
+                        self.tpEnd=1
                 
     
     def initVehicles(self):

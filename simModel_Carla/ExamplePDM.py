@@ -123,7 +123,7 @@ if __name__=='__main__':
         model.updateVeh()
 
     #according to collision sensor
-    model.record_result(total_start_time, True, None)
+    model.record_result(total_start_time, True)
 
     model.destroy()
     # gui.terminate()
