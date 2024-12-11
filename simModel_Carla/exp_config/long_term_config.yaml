@@ -1,7 +1,6 @@
 map_name: Town06
 delta_seconds: 0.1
-# ego_path: None
-preset_ego_route: [272,122]
+preset_ego_route: [272, 122]  # 长期场景的路点
 rebuild_roadgraph: False
 updateInterval: 10
 deArea: 50
@@ -10,6 +9,7 @@ carlaImage: True
 vehicleSpawnInterval: 50
 vehicleVisibleRange: 100
 vehicleCheckRange: 50
+max_steps: 2000  # 长期场景的最大时间步限制
 init:
-  veh_num: 10
-  travel_distance: 2000
+  veh_num: 10  # 初始车辆数量
+  travel_distance: 2000  # 行驶距离 

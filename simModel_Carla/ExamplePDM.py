@@ -32,13 +32,12 @@ if __name__=='__main__':
     
     parser.add_argument('--database', default=None,
                     help='simulation data file name')
+    parser.add_argument('--config_path', default='./simModel_Carla/exp_config/long_term_config.yaml',
+                    help='path to the configuration file')
     arguments = parser.parse_args()
     
-    config_name='./simModel_Carla/example_config.yaml'
+    config_name = arguments.config_path  # 使用传入的配置文件路径
     random.seed(int(arguments.random_seed))
-
-    config_name='./simModel_Carla/example_config.yaml'
-    
 
     stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')
     database=f'results/{arguments.database}/'+arguments.database+'.db' if arguments.database else 'results/' + stringTimestamp + '.db'

@@ -190,7 +190,7 @@ if __name__=='__main__':
     from carlaWrapper import carlaRoadGraphWrapper
     descriptor=EnvDescription()
     
-    config_name='./simModel_Carla/example_config.yaml'
+    config_name='./simModel_Carla/exp_config/long_term_config.yaml'
     random.seed(112102)
 
     stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')    

@@ -1,0 +1,15 @@
+map_name: Town06
+delta_seconds: 0.1
+preset_ego_route: [300, 350]  # TODO: 请替换为实际的环岛路点
+rebuild_roadgraph: False
+updateInterval: 10
+deArea: 50
+max_veh_num: 40
+carlaImage: True
+vehicleSpawnInterval: 50
+vehicleVisibleRange: 100
+vehicleCheckRange: 50
+max_steps: 1000  # 最大时间步限制
+init:
+  veh_num: 12  # TODO: 根据环岛场景需求调整车辆数量
+  travel_distance: 2000  # TODO: 根据环岛场景需求调整行驶距离 

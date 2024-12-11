@@ -99,6 +99,7 @@ class Model:
         self.vehicleCheckRange=self.cfg['vehicleCheckRange']
         self.vehicleVisbleRange=self.cfg['vehicleVisibleRange']
         self.max_veh_num=self.cfg['max_veh_num']
+        self.max_steps=self.cfg['max_steps']  # 从配置文件读取最大时间步限制
 
         self.renderQueue = RenderQueue(5)
         self.imageQueue = ImageQueue(50)
@@ -259,6 +260,13 @@ class Model:
         self.world.tick()
 
         self.timeStep+=1
+        
+        # 检查是否超过最大时间步限制
+        if self.timeStep >= self.max_steps:
+            print('[cyan]已达到最大时间步限制.[/cyan]')
+            with self.tpEnd_lock:
+                self.tpEnd = 1
+            return
 
         if self.shouldUpdate():
             self.getSce()
@@ -786,6 +794,8 @@ class Model:
             reason+=f'collision happened with {self.collision_opponent}'
         if self.laneInvation:
             reason+=f'laneInvation happened with {self.laneInvationType}'
+        if self.timeStep >= self.max_steps:
+            reason+=f'reached maximum time steps ({self.max_steps})'
         # add result data
         cur.execute(
             """INSERT INTO resultINFO (
@@ -804,7 +814,7 @@ if __name__=='__main__':
     from carlaWrapper import carlaRoadGraphWrapper
     descriptor=EnvDescription()
 
-    config_name='./simModel_Carla/example_config.yaml'
+    config_name='./simModel_Carla/exp_config/long_term_config.yaml'
     random.seed(11210238)
 
     stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')    
