@@ -583,15 +583,44 @@ class Model:
 
         start_idx_sp=None
         if self.cfg['preset_ego_route']!='None':
-            #TODO：检查一下route的格式，解析他，设计ego_path的格式
-            start_idx_sp,end_idx_sp=map(int,self.cfg['preset_ego_route'])
+            route = self.cfg['preset_ego_route']
+            if isinstance(route, list):
+                if len(route) == 2 and isinstance(route[0], (int, str)) and str(route[0]).isdigit():
+                    # 索引格式: [247, 41]
+                    start_idx_sp, end_idx_sp = map(int, route)
+                elif len(route) == 6:  # 坐标格式被分割成6个部分
+                    # 坐标格式: ['(-60.490871', 239.699402, '0)', '(32.382332', 237.53667, '0)']
+                    # 处理起始点
+                    start_x = float(route[0].strip('('))
+                    start_y = float(route[1])
+                    start_z = float(route[2].strip(')'))
+                    start_loc = carla.Location(x=start_x, y=start_y, z=start_z)
+                    
+                    # 处理终点
+                    end_x = float(route[3].strip('('))
+                    end_y = float(route[4])
+                    end_z = float(route[5].strip(')'))
+                    end_loc = carla.Location(x=end_x, y=end_y, z=end_z)
+                    
+                    start_waypoint = self.carla_map.get_waypoint(start_loc)
+                    start_transform = start_waypoint.transform
+                    start_transform = carla.Transform(start_transform.location+carla.Location(z=0.3), carla.Rotation(yaw=start_transform.rotation.yaw))
+            else:
+                # 如果是其他格式
+                start_idx_sp,end_idx_sp=map(int,self.cfg['preset_ego_route'])
             
         spawn_success=False
+        c = 0
         while not spawn_success:
-            start_waypoint = self.createSpawnPoints(k=1,idx=start_idx_sp)[0]
-            actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint)
+            if c > 1000:
+                raise RuntimeError("生成主车失败:尝试次数超过1000次")
+            if start_idx_sp is not None:
+                start_waypoint = self.createSpawnPoints(k=1,idx=start_idx_sp)[0]
+            actor = self.world.try_spawn_actor(vehicle_bp, start_waypoint if start_idx_sp is not None else start_transform)
             if actor:
                 spawn_success=True
+            c += 1
+            
         self.world.tick()
         self.v_actors[actor.id]=actor
 
@@ -600,8 +629,14 @@ class Model:
         if self.cfg['preset_ego_route']=='None':
             route, end_waypoint = self.randomRoute(start_waypoint)
         else:
-            end_waypoint=self.createSpawnPoints(k=1,idx=end_idx_sp)[0]
-            end_waypoint=self.carla_map.get_waypoint(end_waypoint.location)
+            if len(route) == 6:
+                # 如果是坐标输入，直接使用end_loc
+                end_waypoint = self.carla_map.get_waypoint(end_loc)
+            else:
+                # 原有的索引方式
+                end_waypoint=self.createSpawnPoints(k=1,idx=end_idx_sp)[0]
+                end_waypoint=self.carla_map.get_waypoint(end_waypoint.location)
+            
             while end_waypoint.is_junction:
                 nxt_wps=end_waypoint.next(1)
                 end_waypoint=nxt_wps[0]

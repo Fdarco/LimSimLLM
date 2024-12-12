@@ -76,10 +76,10 @@ if __name__=='__main__':
     # settings.synchronous_mode = False
     # settings.fixed_delta_seconds = None
     # world.apply_settings(settings)    
-    # breakpoint()
     
     # for item in model.roadgraph.Edges.items():
     #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+    # breakpoint()
     
     interfuser.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm
     # interfuser.setup(path_to_config)

@@ -222,12 +222,23 @@ class JunctionLane(AbstractLane):
         Returns:
             Tuple[int, int, int]: road_id, section_id, lane_id
         """
-        for wp in self.end_wp.next(RESOLUTION):
-            if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
-                return (wp.road_id, wp.section_id, wp.lane_id)
-        for wp in self.end_wp.next(RESOLUTION*5):
-            if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
-                return (wp.road_id, wp.section_id, wp.lane_id)
+        if self.end_wp.is_junction:
+            for wp in self.end_wp.next(RESOLUTION):
+                if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
+                    return (wp.road_id, wp.section_id, wp.lane_id)
+            for wp in self.end_wp.next(RESOLUTION*5):
+                if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
+                    return (wp.road_id, wp.section_id, wp.lane_id)
+            for wp in self.end_wp.previous(RESOLUTION):
+                if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
+                    return (wp.road_id, wp.section_id, wp.lane_id)
+            for wp in self.end_wp.previous(RESOLUTION*5):
+                if not wp.is_intersection and (wp.road_id, wp.section_id, wp.lane_id)!=(self.end_wp.road_id, self.end_wp.section_id, self.end_wp.lane_id):
+                    return (wp.road_id, wp.section_id, wp.lane_id)
+        else:
+            wp=self.end_wp
+            return (wp.road_id, wp.section_id, wp.lane_id)
+        print(f"Cannot find next lane for junction lane at location {self.end_wp.transform.location}")
         return None
 
     @property

@@ -43,6 +43,7 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
     # Obtain route plan
     lat_ref, lon_ref = _get_latlon_ref(CarlaDataProvider.get_world())
 
+    check_route=[]
     route = []
     gps_route = []
     count=0
@@ -54,6 +55,7 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
         idx=0
         for wp, connection in interpolated_trace:
             route.append((wp.transform, connection))
+            check_route.append((wp,connection))
             gps_coord = _location_to_gps(lat_ref, lon_ref, wp.transform.location)
             gps_route.append((gps_coord, connection))
             
@@ -98,7 +100,29 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
         while p<=len(route)-1:
             if route[p][0].location.distance(wp_tulpe[0].location)<=0.3:
                 del route[p]
-            p+=1           
+            p+=1   
+    check_route_edge=rd.get_route_edge(check_route)
+    if check_route_edge!=veh.route:
+        # 如果路径不匹配，重新规划一次路径
+        grp = GlobalRoutePlanner(CarlaDataProvider.get_map(),0.5)
+        route = grp.trace_route(veh.cur_wp.transform.location, veh.end_waypoint.transform.location)
+        check_route_edge=rd.get_route_edge(route)
+        gps_route=[]
+        for wp,connection in route:
+            gps_coord = _location_to_gps(lat_ref, lon_ref, wp.transform.location)
+            gps_route.append((gps_coord, connection))
+        if check_route_edge!=veh.route:
+            # 如果重新规划后路径仍不匹配,说明路径规划有问题
+            print(f"Expected route: {veh.route}")
+            print(f"Actual route: {check_route_edge}")
+            raise Exception('Route planning error: planned route does not match expected route')
+        route=[(wp.transform,connection) for wp,connection in route]
+        for idx,wp_tulpe in enumerate(route):
+            p=idx+1
+            while p<=len(route)-1:
+                if route[p][0].location.distance(wp_tulpe[0].location)<=0.3:
+                    del route[p]
+                p+=1
     return gps_route, route
 
 

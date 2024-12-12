@@ -1,6 +1,6 @@
 map_name: Town06
 delta_seconds: 0.1
-preset_ego_route: [150, 250]  # TODO: 请替换为实际的交叉口路点
+preset_ego_route: [(-60,239,0.5), (32.382332,237.53667,0)] #[(-60.490871,239.699402,0.5), (32.382332,237.53667,0)]
 rebuild_roadgraph: False
 updateInterval: 10
 deArea: 50

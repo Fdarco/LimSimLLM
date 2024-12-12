@@ -1,6 +1,6 @@
 map_name: Town06
 delta_seconds: 0.1
-preset_ego_route: [500, 550]  # TODO: 请替换为实际的弯道路点
+preset_ego_route: [346,285]  # TODO: 请替换为实际的弯道路点
 rebuild_roadgraph: False
 updateInterval: 10
 deArea: 50
@@ -9,7 +9,7 @@ carlaImage: True
 vehicleSpawnInterval: 50
 vehicleVisibleRange: 100
 vehicleCheckRange: 50
-max_steps: 1000  # 最大时间步限制
+max_steps: 300  # 最大时间步限制
 init:
-  veh_num: 10  # TODO: 根据弯道场景需求调整车辆数量
+  veh_num: 30  # TODO: 根据弯道场景需求调整车辆数量
   travel_distance: 2000  # TODO: 根据弯道场景需求调整行驶距离 
