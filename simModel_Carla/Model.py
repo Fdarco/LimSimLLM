@@ -63,7 +63,7 @@ class Model:
 
         # --------- init carla and roadgraph --------- #
         self.client = carla.Client('localhost', port)
-        self.client.set_timeout(20.0)
+        self.client.set_timeout(50.0)
         self.client.load_world(self.cfg['map_name'])
         self.world = self.client.get_world()
         self.carla_map = self.world.get_map()
@@ -275,6 +275,8 @@ class Model:
                 self.putCARLAImage()
             if not self.tpStart:
                 self.tpStart = 1
+                
+        if self.timeStep%20==0:
             self.saveBEV()
 
         if self.shouldSpawnVeh():
@@ -381,7 +383,7 @@ class Model:
         if vehicle.id == self.ego_id:
             if check_wp is None or check_wp.lane_type != carla.LaneType.Driving:
                 self.laneInvation = True
-                self.laneInvationType = vehicle.cur_wp.lane_type if check_wp is None else check_wp.lane_type
+                self.laneInvationType = None if check_wp is None else check_wp.lane_type
                 print('Vehicle left normal driving lane')
                 with self.tpEnd_lock:
                     self.tpEnd = 1
@@ -569,12 +571,69 @@ class Model:
             del veh
 
     def destroy(self):
-        # ------- close carla sync mode ------- #
-        settings = self.world.get_settings()
-        settings.synchronous_mode = False
-        settings.fixed_delta_seconds = None
-        self.world.apply_settings(settings)
-        # self.dbBridge.close()
+        """安全清理所有资源"""
+        try:
+            # 关闭carla同步模式
+            settings = self.world.get_settings()
+            settings.synchronous_mode = False
+            settings.fixed_delta_seconds = None
+            self.world.apply_settings(settings)
+
+            # 清理所有传感器
+            if self.collision_sensor:
+                self.collision_sensor.destroy()
+            if self.laneInvasion_sensor:
+                self.laneInvasion_sensor.destroy()
+            if self.BEV_Camera:
+                self.BEV_Camera.cam.destroy()
+
+            # 清理所有vehicle actors
+            for actor_id in list(self.v_actors.keys()):
+                try:
+                    if self.v_actors[actor_id].is_alive:
+                        self.v_actors[actor_id].destroy()
+                except:
+                    pass  # 如果actor已经被销毁则忽略
+            self.v_actors.clear()
+
+            # 清理pedestrian actors
+            for actor_id in list(self.p_actors.keys()):
+                try:
+                    if self.p_actors[actor_id].is_alive:
+                        self.p_actors[actor_id].destroy()
+                except:
+                    pass
+            self.p_actors.clear()
+
+            # 清理cycle actors
+            for actor_id in list(self.c_actors.keys()):
+                try:
+                    if self.c_actors[actor_id].is_alive:
+                        self.c_actors[actor_id].destroy()
+                except:
+                    pass
+            self.c_actors.clear()
+
+            # 清理车辆列表
+            self.vehicles.clear()
+            self.pedestrians.clear()
+            self.cycles.clear()
+            self.vehINAoI.clear()
+            self.outOfAoI.clear()
+
+            # 安全关闭数据库连接
+            if hasattr(self, 'dbBridge'):
+                self.dbBridge.close()
+
+            # 清理交通管理器
+            if self.carla_tm:
+                self.carla_tm = None
+
+        except Exception as e:
+            print(f"在清理资源时发生错误: {str(e)}")
+            # 确保数据库连接被关闭
+            if hasattr(self, 'dbBridge'):
+                self.dbBridge.close()
 
     def initEgo(self):
         blueprint_library=self.world.get_blueprint_library()
@@ -841,6 +900,7 @@ class Model:
             )
         )
         conn.commit()
+        time.sleep(5)
         conn.close()
         return 
 

@@ -23,3 +23,11 @@ python /data/limsim-o/LimSimLLM/simModel_Carla/ExamplePDM.py \
 --random_seed=${SEED} \
 --database=${DATABASE} \
 --config_path=${CONFIG_PATH}
+
+# python /data/limsim-o/LimSimLLM/simModel_Carla/RoadInfoGet.py
+echo "Experiment finished"
+# 实验完成后立即运行评估
+bash ./simModel_Carla/eval.sh ${4}  # ${4}是数据库名称参数
+echo "Evaluation finished"
+# 清理CARLA进程
+pkill -f "CarlaUE4-Linux.*--world-port=${1}"  # ${1}是端口参数
