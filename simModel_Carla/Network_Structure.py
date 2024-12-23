@@ -79,6 +79,7 @@ class AbstractLane(ABC):
     wp_list = []
     next_lane_id:str=0
     previous_lane_id:str=0
+    speed_limit:float=0
 
     @cached_property
     def length(self):

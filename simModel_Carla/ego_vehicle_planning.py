@@ -134,7 +134,7 @@ class LLMEgoPlanner:
         #     obs_list.append(dynamic_obs)
 
         # state machine
-        ego_veh.behaviour = self.simple_state_machine(ego_veh, roadgraph, current_lane)
+        # ego_veh.behaviour = self.simple_state_machine(ego_veh, roadgraph, current_lane)
 
         # 对于很短的lane，可能会规划不出来
         next_lane = roadgraph.get_available_next_lane(current_lane.id,ego_veh.available_lanes)
@@ -217,7 +217,7 @@ class LLMEgoPlanner:
         course_t = config["MIN_T"]  # Sample course time
         dt = config["DT"]  # time tick
         current_state = vehicle.state
-        
+        print('current state vel in acdc:', current_state.vel)
         if behaviour == Behaviour.AC:
             if current_state.acc < 0:
                 target_acc = config["NORMAL_ACC_DEFAULT"]
@@ -291,14 +291,19 @@ class LLMEgoPlanner:
     ) -> Trajectory:
         
         state_in_target_lane = vehicle.get_state_in_lane(target_lane)
-        target_vel = vehicle.state.vel
+        print('current state vel:', vehicle.state.vel)
+        if vehicle.state.vel < 2:  # 如果当前速度接近0
+            target_vel = 2.0  # 设置一个合理的初始速度
+        else:
+            target_vel = vehicle.state.vel
+        
         dt = config["DT"]
         s_sample = config["S_SAMPLE"]
         n_s_sample = config["N_S_SAMPLE"]
 
         sample_t = [config["MIN_T"] / 1.5]  # Sample course time
-        vel_min = max(state_in_target_lane.vel - 2.0, 0)
-        vel_max = min(target_vel + s_sample * n_s_sample * 1.01, 13.89)
+        vel_min = max(2.0, state_in_target_lane.vel - 2.0)  
+        vel_max = min(target_vel + s_sample * n_s_sample * 1.01, 13.89)#target_lane.speed_limit)#TODO:这里传自车所在的车道限速是最好的
         vel_max = max(vel_max, 5.0)
         sample_s = np.empty(0)
         for t in sample_t:

@@ -116,10 +116,17 @@ class Score_List(list):
             speed_limit += 1 if score_item.speed_limit == 0.9 else 0
             safety += score_item.safety
             red_light *= score_item.red_light
-        comfort /= len(self)
-        efficiency /= len(self)
-        safety /= len(self)
-        speed_limit_penalty = 0.9 ** (speed_limit / len(self) * 10)
+        if len(self) != 0:
+            comfort /= len(self)
+            efficiency /= len(self)
+            safety /= len(self)
+            speed_limit_penalty = 0.9 ** (speed_limit / len(self) * 10)
+        else:
+            comfort = 0.0
+            efficiency = 0.0
+            safety = 0.0
+            speed_limit = 0
+            speed_limit_penalty = 1.0
         return (hyper_parameter.score_weight["comfort"] * comfort + hyper_parameter.score_weight["efficiency"] * efficiency + hyper_parameter.score_weight["safety"] * safety) * red_light * speed_limit_penalty * self.penalty * 100
     
     def fail_result(self):

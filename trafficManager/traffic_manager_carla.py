@@ -124,11 +124,8 @@ class TrafficManager:
                 except Exception as e:
                     logging.error(f"Error when updating behaviour of vehicle {vehicle_id}: {e}")
             if vehicle.vtype == VehicleType.EGO and self.config["EGO_PLANNER"]:#这里需要加EGO_PLANNER吗
-                try:
-                    vehicle.update_behaviour(roadgraph)
-                except Exception as e:
-                    logging.error(f"Error when updating behaviour of vehicle {vehicle_id}: {e}")
-                    raise LaneChangeException()
+                vehicles[ego_id].behaviour = ego_behaviour
+   
 
         # Decision Module
         ego_decision: EgoDecision = None
@@ -150,8 +147,8 @@ class TrafficManager:
 
         # default: use the ego_planner, in trafficManager/planner/ego_vehicle_planner.py
         if self.config["EGO_PLANNER"] and self.config['EGO_CONTROL']:
+            print('ego car lane in traffic manager 2:', vehicles[ego_id].lane_id)
             ego_path = self.ego_planner.plan(vehicles[ego_id], carlaRoadgraph, None, current_time_step)
-            vehicles[ego_id].behaviour = ego_behaviour
             result_paths[ego_id] = ego_path
 
         # Update Last Seen
@@ -297,6 +294,7 @@ class TrafficManager:
             vtype_info = self.model.allvTypes[ego_info["vTypeID"]]
             ego_car = create_vehicle(ego_info, roadgraph, vtype_info, T,
                                      VehicleType.EGO)
+        print('ego car lane in traffic manager:', ego_car.lane_id)
         return ego_car
 
 

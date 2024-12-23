@@ -127,7 +127,7 @@ if __name__=='__main__':
     #according to collision sensor
     model.record_result(total_start_time, True)
 
-    model.destroy()
+    # model.destroy()
     # gui.terminate()
     # gui.join()
 

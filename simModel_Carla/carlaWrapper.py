@@ -22,12 +22,13 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
                 for junction_lane_id in junction_lane_list:
                     next_lane_id=self.roadgraph.WP2Lane[self.roadgraph.Junction_Dict[junction_lane_id].next_lane]
                     normal_lane.next_lanes[next_lane_id]=(junction_lane_id,'fake')
-
+            normal_lane.speed_limit = lane.speed_limit if lane.speed_limit > 0 else 13.89
             return normal_lane
 
         elif isinstance(lane,cl.JunctionLane):
             junction_lane=carlaJunctionLaneWrapper(lane)
             junction_lane.next_lane_id=self.roadgraph.WP2Lane[junction_lane.lane.next_lane]
+            junction_lane.speed_limit = lane.speed_limit
             return junction_lane
         else:
             return None

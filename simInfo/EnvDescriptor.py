@@ -185,7 +185,7 @@ class EnvDescription:
                 for al in availableLanes:
                     if al[0] != ':':
                         al_idx = int(al.split('_')[-1])
-                        if al_idx > curr_lane_idx:
+                        if al_idx < curr_lane_idx:
                             self.logging.info(f"Ego vehicle choose to change Left lane")
                             nav_describe += self.des_json["navigation_instruction"]["left"]
 
@@ -198,7 +198,7 @@ class EnvDescription:
                 for al in availableLanes:
                     if al not in roadgraph.roadgraph.Junction_Dict.keys():
                         al_idx = int(al.split('-')[-1])
-                        if al_idx > curr_lane_idx:
+                        if al_idx < curr_lane_idx:
                             self.logging.info(f"Ego vehicle choose to change Left lane")
                             nav_describe += self.des_json["navigation_instruction"]["left"]
 
@@ -214,7 +214,6 @@ class EnvDescription:
         # ------------ normal straight ------------ #
         else:
             nav_describe = self.des_json["navigation_instruction"]["straight"]
-        
         return nav_describe
 
     def getNoticeInfo(self, roadgraph: RoadGraph, vehicles: Dict[str, Dict]) -> str:
@@ -286,7 +285,7 @@ class EnvDescription:
         Returns:
             str: available actions prompt, including action id and action description
         """
-        avaliable_action_description = 'Your available actions are: \n'
+        avaliable_action_description = 'Your available actions are (always output the action name not the action id): \n'
         ego = vehicle["egoCar"]
         current_lane = roadgraph.get_lane_by_id(ego["laneIDQ"][-1])
         available_actions = [Behaviour.AC, Behaviour.IDLE, Behaviour.DC, Behaviour.LCL, Behaviour.LCR]

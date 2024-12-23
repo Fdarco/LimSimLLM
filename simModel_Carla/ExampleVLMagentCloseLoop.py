@@ -24,9 +24,13 @@ import os
 import base64
 import numpy as np
 import requests
+import json
 
 
 from leaderboard_util import initDataProvider,route_transform,setup_sensors
+
+import argparse
+from argparse import RawTextHelpFormatter
 
 def NPImageEncode(npimage: np.ndarray) -> str:
     """
@@ -112,9 +116,20 @@ class VLMAgent:
             headers=headers,
             json=payload
         )
-        self.content = []
-
+        while  response.status_code != 200:
+            time.sleep(1)
+            response = requests.post(
+            "https://api.key77qiqi.cn/v1/chat/completions",
+            headers=headers,
+            json=payload
+            )
+        
+        print(response)
+        print(response.status_code)
         return response.json()
+    
+    def reset(self):
+        self.content = []
 
     def str2behavior(self, decision: str) -> Behaviour:
         """
@@ -141,6 +156,7 @@ class VLMAgent:
             return Behaviour.LCL
         else:
             errorStr = f'The decision `{decision}` is not implemented yet!'
+        breakpoint()
         raise NotImplementedError(errorStr)
 
 
@@ -152,25 +168,43 @@ class VLMAgent:
         A function that makes a decision based on a prompt, measures the time it takes to make the decision, and returns various relevant data including the behavior, the decision message, prompt tokens, completion tokens, total tokens, and the time cost.
         """
         start = time.time()
-        response = self.request()
-        print(response)
-        ans = response['choices'][0]['message']['content']
-        prompt_tokens = response['usage']['prompt_tokens']
-        completion_tokens = response['usage']['completion_tokens']
-        total_tokens = response['usage']['total_tokens']
-        end = time.time()
-        timeCost = end - start
-        match = re.search(r'## Decision\n(.*)', ans)
-        behavior = None
-        if match:
-            decision = match.group(1)
-            behavior = self.str2behavior(decision)
-        else:
-            raise ValueError('GPT-4V did not return a valid decision')
-        return (
-            behavior, ans, prompt_tokens, 
-            completion_tokens, total_tokens, timeCost)
-    
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                response = self.request()
+                ans = response['choices'][0]['message']['content']
+                print(ans)
+                prompt_tokens = response['usage']['prompt_tokens']
+                completion_tokens = response['usage']['completion_tokens'] 
+                total_tokens = response['usage']['total_tokens']
+                
+                match = re.search(r'## Decision\n(.*)', ans)
+                if not match:
+                    print(f"重试 {retry_count + 1}/{max_retries}: 模型输出格式不正确")
+                    retry_count += 1
+                    continue
+                    
+                decision = match.group(1)
+                behavior = self.str2behavior(decision)
+                
+                end = time.time()
+                timeCost = end - start               
+                self.reset()
+                return (behavior, ans, prompt_tokens, 
+                        completion_tokens, total_tokens, timeCost)
+                        
+            except (KeyError,NotImplementedError) as e:#, ValueError, json.JSONDecodeError) as e:
+                print(f"重试 {retry_count + 1}/{max_retries}: {str(e)}")
+                retry_count += 1
+                if retry_count == max_retries:
+                    breakpoint()
+                    raise ValueError("达到最大重试次数,模型输出始终无法解析")
+                time.sleep(1)  # 等待1秒后重试
+            
+        
+            
 
 SYSTEM_PROMPT = """
 You are GPT-4V(ision), a large multi-modal model trained by OpenAI. Now you act as a mature driving assistant, who can give accurate and correct advice for human driver in complex urban driving scenarios. You'll receive some images from the onboard camera. You'll need to make driving inferences and decisions based on the information in the images. At each decision frame, you receive navigation information and a collection of actions. You will perform scene description, and reasoning based on the navigation information and the front-view image. Eventually you will select the appropriate action output from the action set.
@@ -186,18 +220,36 @@ one of the actions in the action set.(SHOULD BE exactly same and no other words!
 """
 
 if __name__=='__main__':
+    description = "limsim evaluation: evaluate your VLM Agent in limsim Carla\n"
+    
+    parser = argparse.ArgumentParser(description=description, formatter_class=RawTextHelpFormatter)
+    parser.add_argument('--host', default='localhost',
+                        help='IP of the host server (default: localhost)')
+    parser.add_argument('--port', default='3000', help='TCP port to listen to (default: 3000)')
+    parser.add_argument('--trafficManagerPort', default='1112',
+                        help='Port to use for the TrafficManager (default: 1112)')
+    
+    parser.add_argument('--random_seed', default='1121102',
+                        help='scene_rollout_randomseed')
+    
+    parser.add_argument('--database', default=None,
+                    help='simulation data file name')
+    parser.add_argument('--config_path', default='./simModel_Carla/exp_config/long_term_config.yaml',
+                    help='path to the configuration file')
+    arguments = parser.parse_args()
+
     from simInfo.EnvDescriptor import EnvDescription
     from carlaWrapper import carlaRoadGraphWrapper
     descriptor=EnvDescription()
     
-    config_name='./simModel_Carla/exp_config/long_term_config.yaml'
-    random.seed(112102)
+    config_name = arguments.config_path
+    random.seed(int(arguments.random_seed))
 
     stringTimestamp = datetime.strftime(datetime.now(), '%Y-%m-%d_%H-%M-%S')    
-    database = 'results/' + stringTimestamp + '.db'
+    database = f'results/{arguments.database}/{arguments.database}.db' if arguments.database else 'results/' + stringTimestamp + '.db'
     total_start_time = time.time()
 
-    model:Model=Model(cfgFile=config_name,dataBase=database)
+    model:Model=Model(cfgFile=config_name,dataBase=database,port=int(arguments.port),tm_port=int(arguments.trafficManagerPort))
 
     planner = TrafficManager(model)
 
@@ -205,8 +257,8 @@ if __name__=='__main__':
     model.runAutoPilot()
 
 
-    gui = GUI(model)
-    gui.start()
+    # gui = GUI(model)
+    # gui.start()
 
     # init GPT-4V-based driver agent
     gpt4v = VLMAgent()
@@ -241,6 +293,9 @@ if __name__=='__main__':
             gpt4v.addImageBase64(NPImageEncode(front_right_img))
             gpt4v.addTextPrompt(f'\nThe current frame information is:\n{TotalInfo}')
             gpt4v.addTextPrompt('Now, please tell me your answer. Please think step by step and make sure it is right.')
+            print(TotalInfo)
+            
+            
             # get the decision made by the driver agent
             (
                 behaviour, ans, 
@@ -249,25 +304,22 @@ if __name__=='__main__':
             ) = gpt4v.makeDecision()
             # put the decision into the database
             
-            
-            model.putQA(
-                QuestionAndAnswer(
-                    currentLaneInfo+egoInfo, naviInfo, actionInfo, '', 
-                    ans, prompt_tokens, completion_tokens, total_tokens, 
-                    timecost, int(behaviour)
-                )
-            )            
+            qa = QuestionAndAnswer(
+                currentLaneInfo+egoInfo, naviInfo, actionInfo, '', 
+                ans, prompt_tokens, completion_tokens, total_tokens, 
+                timecost, int(behaviour)
+            )
+            model.putQA(qa)
 
-            try:
-                trajectories = planner.plan(
-                    model.timeStep * 0.1, roadgraph, vehicles, Behaviour(behaviour), other_plan=True
-                )
-            except:
-                trajectories=dict()
+            trajectories = planner.plan(
+                model.timeStep * 0.1, roadgraph, vehicles, Behaviour(behaviour), other_plan=True
+            )
+
             
             model.setTrajectories(trajectories)
-            print(model.ego.lane_id)
-            print(model.ego.behaviour)
+            print('ego lane:', model.ego.lane_id)
+            model.ego.behaviour = Behaviour(behaviour)
+            print("timeStep:",model.timeStep,"behaviour:",model.ego.behaviour)
             
             world=model.world
             for veh in model.vehicles:
@@ -277,9 +329,9 @@ if __name__=='__main__':
         model.updateVeh()
 
     #according to collision sensor
-    model.record_result(total_start_time, True, None)
+    model.record_result(total_start_time, True)
 
-    model.destroy()
-    gui.terminate()
-    gui.join()
+    # model.destroy()
+    # gui.terminate()
+    # gui.join()
 

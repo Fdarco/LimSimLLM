@@ -61,13 +61,13 @@ class ReplayModel:
         #初始化自车
         cur.execute("""SELECT * FROM simINFO;""")
         simINFO = cur.fetchone()
-        _, egoID, netBoundary = simINFO
+        _, egoID, netBoundary, route_length = simINFO
         if egoID:
             self.egoID = egoID
             self.ego = self.initVeh(egoID, self.timeStep)
+            self.route_length = route_length
         else:
             raise TypeError('Please select the appropriate database file.')
-
         cur.close()
         conn.close()
 
@@ -144,7 +144,7 @@ class ReplayModel:
         cur = conn.cursor()
         cur.execute("""SELECT * FROM simINFO;""")
         simINFO = cur.fetchone()
-        _,egoID,map_name=simINFO
+        _,egoID,map_name,route_length=simINFO
         
         map_cache_path=os.path.join(os.getcwd(),'simModel_Carla','map_cache', f"{map_name}.pkl")
         

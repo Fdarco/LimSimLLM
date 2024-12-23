@@ -1,17 +1,28 @@
 #!/bin/bash
-
+pkill -f "python.*Example"
 # 实验次数
-NUM_EXPERIMENTS=1
+NUM_EXPERIMENTS=3
 
 # 模型列表
-MODELS=("interfuser" "PDM")
+MODELS=( 
+    # "interfuser"
+    # "PDM" 
+    "VLMagentCloseLoop"
+)
 
 # 场景列表
-SCENARIOS=("ramp" "intersection" "roundabout" "straight" "curve")
+SCENARIOS=(
+    "ramp"           # 匝道场景
+    # "intersection"   # 十字路口场景
+    # "roundabout"    # 环岛场景
+    # "straight"      # 直道场景
+    # "curve"         # 弯道场景
+)
 
 # 配置基础端口
 BASE_PORT_INTERFUSER=3000
 BASE_PORT_PDM=10000
+BASE_PORT_VLMAGENT=8000
 
 # 为整个实验批次创建一个统一的时间戳
 batch_timestamp=$(date +%Y%m%d_%H%M%S)
@@ -24,6 +35,9 @@ fi
 for exp_num in $(seq 1 $NUM_EXPERIMENTS); do
     echo "Starting experiment run $exp_num"
     
+    # 基于实验编号分配GPU（假设有3个GPU：0,1,2）
+    gpu=$(( (exp_num - 1) % 4 ))
+    
     for model in "${MODELS[@]}"; do
         for ((i=0; i<${#SCENARIOS[@]}; i++)); do
             scenario=${SCENARIOS[$i]}
@@ -31,12 +45,13 @@ for exp_num in $(seq 1 $NUM_EXPERIMENTS); do
             # 设置端口
             if [ "$model" == "interfuser" ]; then
                 port=$((BASE_PORT_INTERFUSER + i*200 + (exp_num-1) * ${#SCENARIOS[@]}))
-                tm_port=$((1112 + i*20000 + (exp_num-1) * ${#SCENARIOS[@]}))
-                gpu=0
-            else
+                tm_port=$((4000 + i*20000 + (exp_num-1) * ${#SCENARIOS[@]}))
+            elif [ "$model" == "PDM" ]; then
                 port=$((BASE_PORT_PDM + i*200 + (exp_num-1) * ${#SCENARIOS[@]}))
                 tm_port=$((2112 + i*200 + (exp_num-1) * ${#SCENARIOS[@]}))
-                gpu=2
+            elif [ "$model" == "VLMagentCloseLoop" ]; then
+                port=$((BASE_PORT_VLMAGENT + i*2000 + (exp_num-1) * ${#SCENARIOS[@]}))
+                tm_port=$((9000 + i*20000 + (exp_num-1) * ${#SCENARIOS[@]}))
             fi
             
             # 创建唯一的数据库名称

@@ -137,15 +137,18 @@ class Decision_Evaluator(Evaluator):
         
         # 3. if the route is end, calculate the final score
         if model.tpEnd:
+            print("model.timeStep: ", model.timeStep)
+            self.cal_route_length(model)
+
+            
             if not self.getResult(model):
                 self.decision_score.fail_result()
                 self.logger.error("the result is failed")
-                # self.cal_route_length(model)
-                self.CalculateDrivingMile(model)
                 self.driving_mile += model.sr.ego.lanePos
-                self.route_length=4425.694
                 print(self.driving_mile, " ", self.route_length)
             else:
+                print(self.route_length)
+                self.CalculateDrivingMile(model)
                 self.route_length = self.driving_mile
                 self.logging.info("the result is success!")
 
@@ -158,36 +161,27 @@ class Decision_Evaluator(Evaluator):
             
         return
     def cal_route_length(self, model: ReplayModel) -> float:
-        """calculate the target route length
+        """Get the route length from model
 
         Args:
             model (ReplayModel)
 
         Returns:
-            float: length
+            float: route length
         """
-        route_length = 0.0
-        _, LLRDict, _ = model.ego.getLaneLevelRoute(model.rb)
-        for edgeID, laneDict in LLRDict.items():
-            for laneType, laneIDset in laneDict.items():
-                if laneType == 'edgeLanes':
-                    laneID = laneIDset.pop()
-                    route_length += model.rb.getLane(laneID).sumo_length
-                if laneType == "junctionLanes":
-                    laneID = laneIDset.pop()
-                    route_length += model.rb.getJunctionLane(laneID).sumo_length
-        self.route_length = route_length
-        return route_length
+        self.route_length = model.route_length
+        return self.route_length
     def getResult(self, model: ReplayModel) -> bool:
         conn = sqlite3.connect(model.dataBase)
         cur = conn.cursor()
-        cur.execute("SELECT result FROM resultINFO WHERE egoID = ?;", (model.sr.ego.id,))
+        cur.execute("SELECT result, fail_reason FROM resultINFO WHERE egoID = ?;", (model.sr.ego.id,))
         try:
-            result = cur.fetchone()[0]
+            result, fail_reason = cur.fetchone()
+            conn.close()
+            return fail_reason is ""
         except:
-            result=None
-        conn.close()
-        return result
+            conn.close()
+            return False
     
     def calculate_ttc(self, model: ReplayModel) -> float:
         """calculate the ttc score, predict the future 5s trajectory, if the trajectory will collide, the time is ttc
@@ -330,16 +324,17 @@ class Decision_Evaluator(Evaluator):
         ego_longitudinal_jerk = np.mean((np.array(ego_history_acc[1::]) - np.array(ego_history_acc[0:-1]))/self.deltaT)
         decision_score.longitudinal_jerk = self.hyper_parameter.calculate_acc_score(ego_longitudinal_jerk, self.hyper_parameter.positive_jerk if ego_longitudinal_jerk > 0 else self.hyper_parameter.negative_jerk)
         
-        # 3. calculate curvature k
-        # ref from https://zhuanlan.zhihu.com/p/619658901
-        ego_speed = list(ego_vehicle.speedQ)[-11::]
-        ego_x = list(ego_vehicle.xQ)[-13::]
-        ego_y = list(ego_vehicle.yQ)[-13::]
-        ego_xdot = (np.array(ego_x[1::]) - np.array(ego_x[0:-1])) / self.deltaT
-        ego_ydot = (np.array(ego_y[1::]) - np.array(ego_y[0:-1])) / self.deltaT
-        ego_xdd = (ego_xdot[1::] - ego_xdot[0:-1]) / self.deltaT
-        ego_ydd = (ego_ydot[1::] - ego_ydot[0:-1]) / self.deltaT
+
         try:
+            # 3. calculate curvature k
+            # ref from https://zhuanlan.zhihu.com/p/619658901
+            ego_speed = list(ego_vehicle.speedQ)[-11::]
+            ego_x = list(ego_vehicle.xQ)[-13::]
+            ego_y = list(ego_vehicle.yQ)[-13::]
+            ego_xdot = (np.array(ego_x[1::]) - np.array(ego_x[0:-1])) / self.deltaT
+            ego_ydot = (np.array(ego_y[1::]) - np.array(ego_y[0:-1])) / self.deltaT
+            ego_xdd = (ego_xdot[1::] - ego_xdot[0:-1]) / self.deltaT
+            ego_ydd = (ego_ydot[1::] - ego_ydot[0:-1]) / self.deltaT
             k = (ego_xdot[1::]*ego_ydd - ego_ydot[1::]*ego_xdd) / (ego_xdot[1::]**2 + ego_ydot[1::]**2)**(3/2)
         except:
             k = 0
@@ -400,6 +395,7 @@ class Decision_Evaluator(Evaluator):
         return False
     
     def CalculateDrivingMile(self, model: ReplayModel) -> None:
+        print(model.sr.ego.laneIDQ)
         # if the car just go to new edge, add the length of the last edge
         if model.sr.ego.laneIDQ[-11].split("-")[0] != model.sr.ego.laneIDQ[-1].split("-")[0]:
             if model.sr.ego.laneIDQ[-11][0] not in model.roadgraph.Junction_Dict:

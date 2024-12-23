@@ -15,7 +15,8 @@ class DBBridge:
         cur.execute('''CREATE TABLE IF NOT EXISTS simINFO(
                         excuteTime TIMESTAMP PRIMARY KEY,
                         egoID TEXT,
-                        netBoundary TEXT);''')
+                        netBoundary TEXT,
+                        route_length REAL);''')
 
         cur.execute('''CREATE TABLE IF NOT EXISTS frameINFO(
                             frame INT NOT NULL,
