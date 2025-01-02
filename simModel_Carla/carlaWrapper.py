@@ -35,26 +35,31 @@ class carlaRoadGraphWrapper(rd.RoadGraph):
 
     def get_available_next_lane(self, lane_id: str, available_lanes) -> rd.AbstractLane:
         #modified from simModel_Carla.Vehicle.get_available_next_lane
-        lane = self.roadgraph.get_lane_by_id(lane_id)
-        if isinstance(lane, cl.NormalLane):
-            # 直接查找相连的lane
-            if lane.next_lane:
+        
+        try:
+            lane = self.roadgraph.get_lane_by_id(lane_id)
+            if isinstance(lane, cl.NormalLane):
+                # 直接查找相连的lane
+                if lane.next_lane:
+                    next_lane_id = self.roadgraph.WP2Lane[lane.next_lane]
+                    if next_lane_id in available_lanes:
+                        return self.get_lane_by_id(next_lane_id)
+                # 查找相连的junction lane
+                else:
+                    next_junction_list = self.roadgraph.get_Normal2Junction(lane.id)
+                    for next_lane_i in next_junction_list:
+                        if next_lane_i in available_lanes:
+                            return self.get_lane_by_id(next_lane_i)
+
+            # 如果是junction lane，则直接查找和他相连的lane
+            elif isinstance(lane, cl.JunctionLane):
                 next_lane_id = self.roadgraph.WP2Lane[lane.next_lane]
                 if next_lane_id in available_lanes:
                     return self.get_lane_by_id(next_lane_id)
-            # 查找相连的junction lane
-            else:
-                next_junction_list = self.roadgraph.get_Normal2Junction(lane.id)
-                for next_lane_i in next_junction_list:
-                    if next_lane_i in available_lanes:
-                        return self.get_lane_by_id(next_lane_i)
+            return None
+        except:
+            breakpoint()
 
-        # 如果是junction lane，则直接查找和他相连的lane
-        elif isinstance(lane, cl.JunctionLane):
-            next_lane_id = self.roadgraph.WP2Lane[lane.next_lane]
-            if next_lane_id in available_lanes:
-                return self.get_lane_by_id(next_lane_id)
-        return None
 
     def get_next_lane(self, lane_id: str) -> Union[rd.NormalLane, rd.JunctionLane]:
         lane = self.roadgraph.get_lane_by_id(lane_id)

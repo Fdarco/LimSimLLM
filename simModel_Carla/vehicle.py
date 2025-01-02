@@ -103,13 +103,19 @@ class Vehicle:
 
     def export2Dict(self,roadgraph:RoadGraph):
         if not self.available_lanes and self.route:
-            self.available_lanes=roadgraph.get_all_available_lanes(self.route,self.end_waypoint)
+            try:
+                self.available_lanes=roadgraph.get_all_available_lanes(self.route,self.end_waypoint)
+                self.next_available_lanes = self.get_available_lanes(roadgraph)
+            except:
+                self.available_lanes=None#roundabout map bug
+                self.next_available_lanes=None
+        
         return {
             'id': self.id,"vTypeID":self.id,
             'xQ': self.xQ, 'yQ': self.yQ, 'yawQ': self.yawQ,
             'speedQ': self.speedQ, 'accelQ': self.accelQ,
             'laneIDQ': self.laneIDQ, 'lanePosQ': self.lanePosQ,
-            'availableLanes': [] if not self.route else self.get_available_lanes(roadgraph),
+            'availableLanes': self.next_available_lanes,
             'routeIdxQ': self.routeIdxQ, 
             'width': self.width,
             'length':self.length,
@@ -259,9 +265,15 @@ class Vehicle:
                      acc=self.state.acc)
 
     def arrive_destination(self):
-        current_LC = carla.Location(x=self.state.x, y=self.state.y, z=self.state.yaw)
-        destination_lc = carla.Location(x=self.end_waypoint.transform.location.x, y=self.end_waypoint.transform.location.y, z=self.end_waypoint.transform.location.z)
-        return destination_lc.distance(current_LC) < 5.0
+        # current_LC = carla.Location(x=self.state.x, y=self.state.y, z=0)
+        current_LC=self.actor.get_location()
+        current_LC.z=0
+    
+        # destination_lc = carla.Location(x=self.end_waypoint.transform.location.x, y=self.end_waypoint.transform.location.y, z=self.end_waypoint.transform.location.z)
+        destination_lc=self.end_waypoint.transform.location
+        destination_lc.z=0
+        # print(f"distance:{destination_lc.distance(current_LC)}")
+        return destination_lc.distance(current_LC) < 10
 
 
 class vehType:

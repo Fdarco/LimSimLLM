@@ -1,5 +1,5 @@
 import time
-
+from typing import List
 from trafficManager.common.observation import Observation
 from trafficManager.common.vehicle import Behaviour
 from vehicle import Vehicle
@@ -150,56 +150,64 @@ class LLMEgoPlanner:
             lanes = [current_lane, next_lane]
             if current_lane.length - ego_veh.state.s + next_lane.length < 20:#why 20?
                 # 找下一个lane
-                next_lane = roadgraph.get_available_next_lane(current_lane.id,ego_veh.available_lanes)
+                next_lane = roadgraph.get_available_next_lane(next_lane.id,ego_veh.available_lanes)
                 if next_lane != None:
                     lanes.append(next_lane)
         else:
             lanes = [current_lane]
+        try:
+            if ego_veh.behaviour == Behaviour.STOP:
+                path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
+            elif ego_veh.behaviour == Behaviour.IDLE:
+                path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
+            elif ego_veh.behaviour == Behaviour.AC:
+                # Accelerate
+                path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
+            elif ego_veh.behaviour == Behaviour.DC:
+                # Decelerate
+                path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
+            elif ego_veh.behaviour == Behaviour.LCL:
+                # Turn Left, make sure the left lane has enough length
+                left_lane = roadgraph.get_lane_by_id(current_lane.left_lane)
+                if left_lane.length - ego_veh.state.s < 10:
+                    # 如果长度太短，拼接left_lane和下一个lane
+                    next_lane_id=left_lane.next_lane
+                    if next_lane_id:
+                        next_lane = roadgraph.get_lane_by_id(roadgraph.WP2Lane[next_lane_id])
+                        left_lane.wp_list.extend(next_lane.wp_list)
+                        left_lane.get_spline2D()
+                path = self.lanechange_trajectory_generator(
+                    ego_veh,
+                    left_lane,
+                    obs_list,
+                    config
+                )
+            elif ego_veh.behaviour == Behaviour.LCR:
+                # Turn Right
+                right_lane = roadgraph.get_lane_by_id(current_lane.right_lane)
+                if right_lane.length - ego_veh.state.s < 10:
+                    # 拼接left_lane和下一个lane
+                    next_lane_id=right_lane.next_lane
+                    if next_lane_id:
+                        next_lane = roadgraph.get_lane_by_id(roadgraph.WP2Lane[next_lane_id])
+                        right_lane.wp_list.extend(next_lane.wp_list)
+                        right_lane.get_spline2D()
+                path = self.lanechange_trajectory_generator(
+                    ego_veh,
+                    right_lane,
+                    obs_list,
+                    config
+                )
+            else:
+                logging.error(
+                    "Vehicle {} has unknown behaviour {}".format(
+                        ego_veh.id, ego_veh.behaviour)
+                )
+        except Exception as e:
+            logging.error(f"Error in planning: {e}")
+            ego_veh.behaviour = Behaviour.IDLE
+            path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
 
-        if ego_veh.behaviour == Behaviour.IDLE:
-            path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
-        elif ego_veh.behaviour == Behaviour.AC:
-            # Accelerate
-            path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
-        elif ego_veh.behaviour == Behaviour.DC:
-            # Decelerate
-            path = self.acdc_trajectory_generator(ego_veh, lanes, config, ego_veh.behaviour)
-        elif ego_veh.behaviour == Behaviour.LCL:
-            # Turn Left, make sure the left lane has enough length
-            left_lane = roadgraph.get_lane_by_id(current_lane.left_lane)
-            if left_lane.length - ego_veh.state.s < 10:
-                # 如果长度太短，拼接left_lane和下一个lane
-                next_lane_id=left_lane.next_lane
-                if next_lane_id:
-                    next_lane = roadgraph.get_lane_by_id(roadgraph.WP2Lane[next_lane_id])
-                    left_lane.wp_list.extend(next_lane.wp_list)
-                    left_lane.get_spline2D()
-            path = self.lanechange_trajectory_generator(
-                ego_veh,
-                left_lane,
-                obs_list,
-                config
-            )
-        elif ego_veh.behaviour == Behaviour.LCR:
-            # Turn Right
-            right_lane = roadgraph.get_lane_by_id(current_lane.right_lane)
-            if right_lane.length - ego_veh.state.s < 10:
-                # 拼接left_lane和下一个lane
-                next_lane = roadgraph.get_lane_by_id(roadgraph.WP2Lane[right_lane.next_lane])
-                if next_lane:
-                    right_lane.wp_list.extend(next_lane.wp_list)
-                    right_lane.get_spline2D()
-            path = self.lanechange_trajectory_generator(
-                ego_veh,
-                right_lane,
-                obs_list,
-                config
-            )
-        else:
-            logging.error(
-                "Vehicle {} has unknown behaviour {}".format(
-                    ego_veh.id, ego_veh.behaviour)
-            )
         logging.debug(
             "Vehicle {} Total planning time: {}".format(
                 ego_veh.id, time.time() - start)
@@ -217,7 +225,6 @@ class LLMEgoPlanner:
         course_t = config["MIN_T"]  # Sample course time
         dt = config["DT"]  # time tick
         current_state = vehicle.state
-        print('current state vel in acdc:', current_state.vel)
         if behaviour == Behaviour.AC:
             if current_state.acc < 0:
                 target_acc = config["NORMAL_ACC_DEFAULT"]
@@ -239,10 +246,18 @@ class LLMEgoPlanner:
 
         elif behaviour == Behaviour.IDLE:
             target_acc = 0
+            
+        elif behaviour == Behaviour.STOP:
+            target_acc = -config["LARGE_DCC_DEFAULT"]
+            # When the speed decreases to 0, it does not continue to decelerate and stops at the same place
+            if current_state.vel + target_acc*course_t < 0:
+                course_t = (0.1 - current_state.vel)/target_acc
 
         target_v = current_state.vel + target_acc*course_t
+        # if target_v < 0:#for debug 瞬移问题，注释掉,经测试没用
+        #     target_v = 0
         if behaviour == Behaviour.IDLE:
-            target_v = 5.0
+            target_v = 5.0#可能有问题阿，不是按当前速度
             
         target_s = current_state.s + (current_state.vel + target_v)* course_t * 0.5
         if target_s - current_state.s < vehicle.length:
@@ -303,7 +318,7 @@ class LLMEgoPlanner:
 
         sample_t = [config["MIN_T"] / 1.5]  # Sample course time
         vel_min = max(2.0, state_in_target_lane.vel - 2.0)  
-        vel_max = min(target_vel + s_sample * n_s_sample * 1.01, 13.89)#target_lane.speed_limit)#TODO:这里传自车所在的车道限速是最好的
+        vel_max = min(target_vel + s_sample * n_s_sample * 1.01, 11.11)#target_lane.speed_limit)#TODO:这里传自车所在的车道限速是最好的
         vel_max = max(vel_max, 5.0)
         sample_s = np.empty(0)
         for t in sample_t:

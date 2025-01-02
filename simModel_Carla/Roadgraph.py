@@ -572,3 +572,10 @@ class RoadGraph:
             
             
         raise ValueError("cannot find next available lane")
+
+    def clear_traffic_lights(self):
+        """清除所有junction lane中的traffic light引用,以便于序列化
+        """
+        for junction_lane in self.Junction_Dict.values():
+            if hasattr(junction_lane, 'traffic_light'):
+                junction_lane.traffic_light = None

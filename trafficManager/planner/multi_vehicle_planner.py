@@ -31,7 +31,7 @@ class MultiVehiclePlanner(AbstractMultiPlanner):
         plan_result: Dict[int, Trajectory] = {}
         for vehicle in controlled_observation.vehicles:
             start = time.time()
-            if vehicle.vtype == VehicleType.OUT_OF_AOI:
+            if vehicle.vtype == VehicleType.OUT_OF_AOI and not vehicle.available_lanes:#AOI内的车如果available_lanes为None，由AutoPilot控制
                 continue
             if config["EGO_PLANNER"] and vehicle.vtype == VehicleType.EGO:
                 continue

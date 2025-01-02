@@ -147,7 +147,6 @@ class TrafficManager:
 
         # default: use the ego_planner, in trafficManager/planner/ego_vehicle_planner.py
         if self.config["EGO_PLANNER"] and self.config['EGO_CONTROL']:
-            print('ego car lane in traffic manager 2:', vehicles[ego_id].lane_id)
             ego_path = self.ego_planner.plan(vehicles[ego_id], carlaRoadgraph, None, current_time_step)
             result_paths[ego_id] = ego_path
 
@@ -165,8 +164,12 @@ class TrafficManager:
                 if vehicle.vtype == VehicleType.EGO)
             
         for vehicle_id, trajectory in result_paths.items():
-            self.lastseen_vehicles[vehicle_id].trajectory = trajectory
-            output_trajectories[vehicle_id] = data_copy.deepcopy(trajectory)
+            if vehicle_id in self.lastseen_vehicles:
+                self.lastseen_vehicles[vehicle_id].trajectory = trajectory
+                output_trajectories[vehicle_id] = data_copy.deepcopy(trajectory)
+            else:
+                output_trajectories[vehicle_id] = trajectory
+            
             if len(output_trajectories[vehicle_id].states)>=1:
                 del output_trajectories[vehicle_id].states[0]
         # update self.T
@@ -227,13 +230,16 @@ class TrafficManager:
         for vehicle in vehicles_info["carInAoI"]:
             if not vehicle["xQ"]:
                 continue
-            if vehicle["id"] in self.lastseen_vehicles and \
-                    len(self.lastseen_vehicles[vehicle["id"]].trajectory.states) > through_timestep:
+            vehicle_id = vehicle["id"]
+            if (vehicle_id in self.lastseen_vehicles and 
+                    hasattr(self.lastseen_vehicles[vehicle_id], 'trajectory') and
+                    self.lastseen_vehicles[vehicle_id].trajectory and
+                    len(self.lastseen_vehicles[vehicle_id].trajectory.states) > through_timestep):
                 last_state = self.lastseen_vehicles[
-                    vehicle["id"]].trajectory.states[through_timestep]
-                vehicles[vehicle["id"]] = create_vehicle_lastseen(
+                    vehicle_id].trajectory.states[through_timestep]
+                vehicles[vehicle_id] = create_vehicle_lastseen(
                     vehicle,
-                    self.lastseen_vehicles[vehicle["id"]],
+                    self.lastseen_vehicles[vehicle_id],
                     roadgraph,
                     T,
                     last_state,
@@ -242,7 +248,7 @@ class TrafficManager:
                 )
             else:
                 vtype_info = self.model.allvTypes[vehicle["vTypeID"]]
-                vehicles[vehicle["id"]] = create_vehicle(
+                vehicles[vehicle_id] = create_vehicle(
                     vehicle, roadgraph, vtype_info, T, VehicleType.IN_AOI)
 
         for vehicle in vehicles_info["outOfAoI"]:
@@ -294,7 +300,6 @@ class TrafficManager:
             vtype_info = self.model.allvTypes[ego_info["vTypeID"]]
             ego_car = create_vehicle(ego_info, roadgraph, vtype_info, T,
                                      VehicleType.EGO)
-        print('ego car lane in traffic manager:', ego_car.lane_id)
         return ego_car
 
 

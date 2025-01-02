@@ -24,9 +24,9 @@ python /data/limsim-o/LimSimLLM/simModel_Carla/ExampleVLMagentCloseLoop.py \
 
 # python /data/limsim-o/LimSimLLM/simModel_Carla/Model.py \
 
-# echo "VLM Agent Experiment finished"
-# # 实验完成后立即运行评估
-# bash ./simModel_Carla/eval.sh ${4}  # ${4}是数据库名称参数
-# echo "Evaluation finished"
-# # 清理CARLA进程
-# pkill -f "CarlaUE4-Linux.*--world-port=${1}"  # ${1}是端口参数 
+echo "VLM Agent Experiment finished"
+# 实验完成后立即运行评估
+bash ./simModel_Carla/eval.sh ${4}  # ${4}是数据库名称参数
+echo "Evaluation finished"
+# 使用pkill -9强制终止CARLA进程
+pkill -9 -f "CarlaUE4-Linux.*--world-port=${1}"  # ${1}是端口参数

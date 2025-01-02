@@ -139,8 +139,6 @@ class Decision_Evaluator(Evaluator):
         if model.tpEnd:
             print("model.timeStep: ", model.timeStep)
             self.cal_route_length(model)
-
-            
             if not self.getResult(model):
                 self.decision_score.fail_result()
                 self.logger.error("the result is failed")
@@ -149,7 +147,7 @@ class Decision_Evaluator(Evaluator):
             else:
                 print(self.route_length)
                 self.CalculateDrivingMile(model)
-                self.route_length = self.driving_mile
+                self.route_length = self.driving_mile = self.route_length
                 self.logging.info("the result is success!")
 
             self.SaveResultinDB(model)
@@ -178,7 +176,7 @@ class Decision_Evaluator(Evaluator):
         try:
             result, fail_reason = cur.fetchone()
             conn.close()
-            return fail_reason is ""
+            return fail_reason == ''
         except:
             conn.close()
             return False
@@ -239,11 +237,14 @@ class Decision_Evaluator(Evaluator):
 
         # 3. lower speed than other car's eval speed in the same edge in last 10 frame        
         lane_id = model.ego.laneID
-        # if lane_id in model.roadgraph.Junction_Dict:
-        #     speed_limit = model.rb.getJunctionLane(lane_id).speed_limit
-        # else:
-        #     speed_limit = model.rb.getLane(lane_id).speed_limit
-        speed_limit=13.89#cant find it
+        current_lane = model.roadgraph.get_lane_by_id(lane_id)
+        speed_limit = current_lane.speed_limit  # 从roadgraph中获取速度限制
+        
+        # 如果当前车道没有速度限制，使用默认值
+        if not speed_limit:
+            speed_limit = 13.89  # 默认50km/h = 13.89m/s
+            self.current_reasoning += "Warning: Using default speed limit (50km/h) as lane speed limit is not available\n"
+            
         ego_history_speed = list(model.ego.speedQ)[-10::]
         
         ## 3.1 judge if wait for red light
@@ -395,13 +396,16 @@ class Decision_Evaluator(Evaluator):
         return False
     
     def CalculateDrivingMile(self, model: ReplayModel) -> None:
-        print(model.sr.ego.laneIDQ)
-        # if the car just go to new edge, add the length of the last edge
-        if model.sr.ego.laneIDQ[-11].split("-")[0] != model.sr.ego.laneIDQ[-1].split("-")[0]:
-            if model.sr.ego.laneIDQ[-11][0] not in model.roadgraph.Junction_Dict:
-                self.driving_mile += model.rb.get_lane_by_id(model.sr.ego.laneIDQ[-11]).length
-            else:
-                self.driving_mile += model.rb.get_lane_by_id(model.sr.ego.laneIDQ[-11]).length
+        #TODO: need to be re-applied
+        # 如果车辆刚进入新的lane,加上上一个lane的长度
+        try:
+            if model.sr.ego.laneIDQ[-2] != model.sr.ego.laneIDQ[-1]:
+                # 获取上一个lane的长度
+                last_lane = model.rb.get_lane_by_id(model.sr.ego.laneIDQ[-2])
+                self.driving_mile += last_lane.length
+        except:
+            breakpoint()
+        
         return
 
     def SaveResultinDB(self, model: ReplayModel) -> None:

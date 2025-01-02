@@ -11,7 +11,8 @@ ACTIONS_DESCRIPTION = {
     Behaviour.IDLE: 'IDLE - remain in the current lane with current speed',
     Behaviour.LCR: 'Turn-right - change lane to the right of the current lane',
     Behaviour.AC: 'Acceleration - accelerate the vehicle',
-    Behaviour.DC: 'Deceleration - decelerate the vehicle'
+    Behaviour.DC: 'Deceleration - decelerate the vehicle',
+    Behaviour.STOP: 'Stop - stop the vehicle in current lane,to avoid collision or waiting for traffic light'
 }
 
 
@@ -70,7 +71,7 @@ class EnvDescription:
 
             current_lane_describe += self.des_json["basic_description"]["current_lane_scenario_description"]["normal_lane"].format(edge_num = edge_num, left_lane_num = left_lane_num, lane_length = round(current_lane.course_spline.s[-1], 3))
 
-        current_lane_describe += self.des_json["basic_description"]["traffic_info_description"].format(speed_limit = current_lane.speed_limit)
+        current_lane_describe += self.des_json["basic_description"]["traffic_info_description"].format(speed_limit = round(current_lane.speed_limit, 3))
 
         return current_lane_describe + "\n"
     
@@ -288,7 +289,7 @@ class EnvDescription:
         avaliable_action_description = 'Your available actions are (always output the action name not the action id): \n'
         ego = vehicle["egoCar"]
         current_lane = roadgraph.get_lane_by_id(ego["laneIDQ"][-1])
-        available_actions = [Behaviour.AC, Behaviour.IDLE, Behaviour.DC, Behaviour.LCL, Behaviour.LCR]
+        available_actions = [Behaviour.AC, Behaviour.IDLE, Behaviour.DC, Behaviour.LCL, Behaviour.LCR, Behaviour.STOP]
 
         if ego["laneIDQ"][-1][0] == ':' or isinstance(current_lane,JunctionLane):
             available_actions.remove(Behaviour.LCL) if Behaviour.LCL in available_actions else None

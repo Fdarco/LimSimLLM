@@ -61,7 +61,6 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
             
             count+=1
             if idx!=len(interpolated_trace)-1:
-                
                 #对于全局路径中的变道部分，如果变道后的路点的s小于等于当前路点s+sample_resolution，则更改变道后的路点 
                 #先判断两个路点的关系,是否是变道
                 #还要特别处理连续变道的情况
@@ -82,16 +81,30 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
                         #如果后续路点在当前路点的前序道路上,删除
                         lane_end=waypoint_next.next_until_lane_end(10)[0].next(1)[0]
                         if on_same_lane(lane_end,waypoint):
-                            del interpolated_trace[idx+1]#bug:i
+                            del interpolated_trace[idx+1]
                             print('del back')
                         check_change_lane_wp=None
                     
-                    #如果变道后的路点纵向变化不高
-                    if check_change_lane_wp and waypoint_next.s <check_change_lane_wp.s+1:
-                        # breakpoint()
-                        # print(f'found change wp:{count}')
-                        interpolated_trace[idx+1]=(check_change_lane_wp.next(hop_resolution)[0],interpolated_trace[idx+1][1])
-                        # del interpolated_trace[i+1]
+                    # 使用xy距离和切线角来判断路点是否合规
+                    if check_change_lane_wp and not on_same_lane(waypoint, waypoint_next):
+                        # 计算xy平面上的距离
+                        dist = waypoint.transform.location.distance(waypoint_next.transform.location)
+                        # 计算两个路点的朝向差异（弧度）
+                        heading_diff = abs(math.atan2(
+                            math.sin(math.radians(waypoint.transform.rotation.yaw - waypoint_next.transform.rotation.yaw)),
+                            math.cos(math.radians(waypoint.transform.rotation.yaw - waypoint_next.transform.rotation.yaw))
+                        ))
+                        
+                        # 如果距离太近（比如小于3米）且朝向差异不大（比如小于15度），说明这是一个不合理的变道点
+                        if dist < 3.0 and heading_diff < math.radians(15):
+                            if idx + 1 < len(interpolated_trace) - 1:  # 不是最后一个路点
+                                del interpolated_trace[idx+1]
+                                print('del change lane point due to small distance and similar heading')
+                            else:  # 是最后一个路点，调整其位置而不是删除
+                                # 沿着当前车道方向前进一段距离
+                                next_wp = check_change_lane_wp.next(3.0)[0]
+                                interpolated_trace[idx+1] = (next_wp, interpolated_trace[idx+1][1])
+                    
                     search_count+=1
                     waypoint_next=waypoint_next.next_until_lane_end(10)[0].next(1)[0]
             idx+=1
@@ -106,7 +119,49 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
         # 如果路径不匹配，重新规划一次路径
         grp = GlobalRoutePlanner(CarlaDataProvider.get_map(),0.5)
         route = grp.trace_route(veh.cur_wp.transform.location, veh.end_waypoint.transform.location)
-        check_route_edge=rd.get_route_edge(route)
+        
+        # 对重新规划的路径进行平滑处理
+        smoothed_route = []
+        idx = 0
+        while idx < len(route):
+            wp, connection = route[idx]
+            smoothed_route.append((wp, connection))
+            
+            if idx < len(route) - 1:
+                current_wp = wp
+                next_wp = route[idx + 1][0]
+                
+                # 检查变道情况
+                left_wp = current_wp.get_left_lane() if current_wp.lane_change==carla.libcarla.LaneChange.Both or current_wp.lane_change==carla.libcarla.LaneChange.Left else None
+                right_wp = current_wp.get_right_lane() if current_wp.lane_change==carla.libcarla.LaneChange.Both or current_wp.lane_change==carla.libcarla.LaneChange.Right else None
+                
+                is_lane_change = False
+                if left_wp and on_same_lane(left_wp, next_wp):
+                    is_lane_change = True
+                elif right_wp and on_same_lane(right_wp, next_wp):
+                    is_lane_change = True
+                
+                if is_lane_change:
+                    # 计算距离和朝向差异
+                    dist = current_wp.transform.location.distance(next_wp.transform.location)
+                    heading_diff = abs(math.atan2(
+                        math.sin(math.radians(current_wp.transform.rotation.yaw - next_wp.transform.rotation.yaw)),
+                        math.cos(math.radians(current_wp.transform.rotation.yaw - next_wp.transform.rotation.yaw))
+                    ))
+                    
+                    # 如果变道点不合理，跳过下一个点
+                    if dist < 5.0 and heading_diff < math.radians(15):
+                        if idx + 5 < len(route):  # 确保不是最后两个点
+                            idx += 5
+                            continue
+                        else:  # 如果是最后两个点，保留但调整最后一个点的位置
+                            next_wp = current_wp.next(3.0)[0]
+                            smoothed_route.append((next_wp, route[idx + 1][1]))
+                            break
+            idx += 1
+        
+        route = smoothed_route
+        check_route_edge=rd.get_route_edge([(wp,connection) for wp,connection in route])
         gps_route=[]
         for wp,connection in route:
             gps_coord = _location_to_gps(lat_ref, lon_ref, wp.transform.location)
@@ -123,6 +178,8 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
                 if route[p][0].location.distance(wp_tulpe[0].location)<=0.3:
                     del route[p]
                 p+=1
+
+    route.append((veh.end_waypoint.transform,route[-1][1]))
     return gps_route, route
 
 

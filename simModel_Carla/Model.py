@@ -37,7 +37,7 @@ import pickle
 from dataclasses import field
 from datetime import datetime
 from threading import Thread, Lock
-
+import math
 class Model:
     def __init__(self,cfgFile: str=None,rouFile: str=None,dataBase: str=None,port:int=2000,tm_port:int=2006):
         # --------- config ---------#
@@ -62,6 +62,7 @@ class Model:
         self.dbBridge.createTable()
 
         # --------- init carla and roadgraph --------- #
+        self.carla_port=port
         self.client = carla.Client('localhost', port)
         self.client.set_timeout(50.0)
         self.client.load_world(self.cfg['map_name'])
@@ -72,7 +73,7 @@ class Model:
         self.carla_tm=None
         self.tm_port=tm_port
 
-        self.roadgraph = RoadGraph()
+        self.roadgraph: RoadGraph = RoadGraph()
         self.map_cache_path=os.path.join(os.getcwd(),'simModel_Carla','map_cache', f"{self.cfg['map_name']}.pkl")
         self.check_and_load_mapcache()
 
@@ -128,15 +129,23 @@ class Model:
     def start(self):
         # ---------- init actors --------- #
         #TODO:根据随机初始化结果输出rouFile,且思考rouFile后续如何使用
+        self.ego,self.ego_id=self.initEgo()
         self.vehicles=self.initVehicles()
         self.pedestrians=self.initPedestrians()
         self.cycles=self.initCycles()
 
-        self.ego,self.ego_id=self.initEgo()
         self.vehicles.append(self.ego)
         
         for veh in self.vehicles:
-            veh.available_lanes=self.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+            while True:
+                try:
+                    veh.available_lanes=self.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+                    break
+                except Exception as e:
+                    print(f"Error getting available lanes for vehicle {veh.id}: {e}")
+                    route,end_waypoint=self.randomRoute(veh.start_waypoint)
+                    veh.route=route 
+                    veh.end_waypoint=end_waypoint
             
         self.simDescriptionCommit()
         # --------- carla sync mode ---------- #
@@ -157,23 +166,59 @@ class Model:
         route_length = 0.0
         available_lanes = self.roadgraph.get_all_available_lanes(self.ego.route, self.ego.end_waypoint)
         
-        # 遍历route中的每个edge
         for edge_id in self.ego.route:
             edge_info = available_lanes[edge_id]
-            # 获取change_lane中的车道（这些是实际会行驶的车道）
-            for section_id, lanes in edge_info['change_lane'].items():
-                if lanes:  # 如果该section有可行驶的车道
-                    lane = lanes[0]
-                    # 特殊处理终点所在的车道
-                    if (lane.start_wp.road_id, lane.start_wp.section_id, lane.start_wp.lane_id) == (self.ego.end_waypoint.road_id, self.ego.end_waypoint.section_id, self.ego.end_waypoint.lane_id):
-                        # 使用end_waypoint的s值作为该车道的长度
-                        route_length += self.ego.end_waypoint.s
-                    else:
-                        route_length += lane.length
+            edge = self.roadgraph.Edges[edge_id]
+            
+            # 获取当前edge中所有section的ID，按照顺序排列
+            section_list = edge.section_list
+            
+            # 遍历每个section
+            for section_id in section_list:
+                section = self.roadgraph.Sections[section_id]
+                
+                # 如果这个section在available_lane中
+                if section_id in edge_info['available_lane']:
+                    lanes = edge_info['available_lane'][section_id]
+                    if lanes:
+                        lane = lanes[0]  # 取第一条车道作为代表
+                        # 检查是否是终点所在的section
+                        if (lane.start_wp.road_id, lane.start_wp.section_id) == (self.ego.end_waypoint.road_id, self.ego.end_waypoint.section_id):
+                            # 找到终点所在的具体车道
+                            end_lane = None
+                            for l in lanes:
+                                if l.start_wp.lane_id == self.ego.end_waypoint.lane_id:
+                                    end_lane = l
+                                    break
+                            if end_lane:
+                                route_length += self.ego.end_waypoint.s
+                            else:
+                                route_length += lane.length
+                        else:
+                            route_length += lane.length
+                # 如果这个section不在available_lane中，但在change_lane中
+                elif section_id in edge_info['change_lane']:
+                    lanes = edge_info['change_lane'][section_id]
+                    if lanes:
+                        lane = lanes[0]
+                        if (lane.start_wp.road_id, lane.start_wp.section_id) == (self.ego.end_waypoint.road_id, self.ego.end_waypoint.section_id):
+                            # 找到终点所在的具体车道
+                            end_lane = None
+                            for l in lanes:
+                                if l.start_wp.lane_id == self.ego.end_waypoint.lane_id:
+                                    end_lane = l
+                                    break
+                            if end_lane:
+                                route_length += self.ego.end_waypoint.s
+                            else:
+                                route_length += lane.length
+                        else:
+                            route_length += lane.length
+            
             # 如果有junction_lane，也要加上
             for junction_lane in edge_info['junction_lane']:
                 route_length += junction_lane.length
-
+        print('route_length:',route_length)
         currTime = datetime.now()
         insertQuery = '''INSERT INTO simINFO VALUES (?, ?, ?, ?);'''
         conn = sqlite3.connect(self.dataBase)
@@ -209,7 +254,6 @@ class Model:
         self.roadgraph.getDataQue()
         Th = Thread(target=self.roadgraph.insertCommit,args=(self.dataBase,))
         Th.start()
-        # self.roadgraph.insertCommit(self.dataBase)
 
     def setAutoPilot(self,vehicle:Vehicle):
         vehicle.actor.set_simulate_physics(True)
@@ -231,7 +275,7 @@ class Model:
         self.carla_tm.set_synchronous_mode(True)
 
         for vehicle in self.vehicles:
-            if vehicle!=self.ego and not vehicle.isAutoPilot:
+            if vehicle.id!=self.ego_id and not vehicle.isAutoPilot:
                 self.setAutoPilot(vehicle)
 
     def shouldUpdate(self):
@@ -251,6 +295,8 @@ class Model:
     def spawnVehicleRuntime(self):
         blueprint_library=self.world.get_blueprint_library()
         spawn_point = self.createSpawnPoints(1)[0]
+        if spawn_point.location.distance(self.ego.actor.get_location())<50:
+            return False
         vehicle_bp = random.choice(blueprint_library.filter('vehicle.mercedes.*'))
         actor = self.world.try_spawn_actor(vehicle_bp, spawn_point)
         if actor:
@@ -352,6 +398,7 @@ class Model:
                 print('[cyan]The ego car has reached the destination.[/cyan]')
                 with self.tpEnd_lock:
                     self.tpEnd = 1
+                    self.saveBEV()
     
     def putTrafficLightINFO(self):
         # update all traffic lights junction states in the network
@@ -408,7 +455,7 @@ class Model:
         check_wp = self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y, z=z), project_to_road=False)
         if vehicle.id == self.ego_id:
             print('ego actor speed:', vehicle.actor.get_velocity().length(),'ego vehicle speed:', vehicle.state.vel)
-            print('ego lane speed:', current_lane.speed_limit)
+            print('ego actor accel:', vehicle.actor.get_acceleration().length(),'ego vehicle accel:', vehicle.state.acc)
             if check_wp is None or check_wp.lane_type != carla.LaneType.Driving:
                 self.laneInvation = True
                 self.laneInvationType = None if check_wp is None else check_wp.lane_type
@@ -434,12 +481,17 @@ class Model:
         vehicle.xQ.append(x)
         vehicle.yQ.append(y)
         vehicle.yawQ.append(yaw)
-        vehicle.speedQ.append(carla_vel.length())
-        vehicle.accelQ.append(vehicle.actor.get_acceleration().length())
         vehicle.routeIdxQ.append(route_idx)
         vehicle.laneIDQ.append(vehicle.lane_id)
         vehicle.lanePosQ.append(vehicle.state.s)
-
+        
+        if vehicle.isAutoPilot:
+            vehicle.speedQ.append(carla_vel.length())
+            vehicle.accelQ.append(vehicle.actor.get_acceleration().length())#TODO:如果是减速度，不会被体现出来
+        else:
+            vehicle.speedQ.append(vehicle.state.vel)
+            vehicle.accelQ.append(vehicle.state.acc)
+        
         vehicle.vxQ.append(carla_vel.x)
         vehicle.vyQ.append(carla_vel.y)
 
@@ -551,8 +603,11 @@ class Model:
             )
         )
     def shutdownAutoPilot(self,vehicle):
+
         if self.carla_tm and vehicle.isAutoPilot:
-            vehicle.actor.set_autopilot(False)
+            if vehicle.id==self.ego_id:
+                print("shutdown autopilot for ego")
+            # vehicle.actor.set_autopilot(False,self.tm_port)#检查只靠关闭物理能否disable autopilot，不能
             vehicle.isAutoPilot=False
             vehicle.actor.set_simulate_physics(False)
 
@@ -565,15 +620,15 @@ class Model:
             if vehicle.trajectory:
                 self.shutdownAutoPilot(vehicle)#use trajectory instead autopilot maybe need to be set in getsce,because of the bug
                 vehicle.state=vehicle.trajectory.states[0]#TODO: 会导致state和actor的实际状态不一致
-                
                 centerx, centery, yaw, speed, accel = vehicle.trajectory.pop_last_state()
-                print('vehicle id:', vehicle.id,'planned speed:', speed)
                 self.v_actors[vehicle.id].set_transform(carla.Transform(location=carla.Location(x=centerx, y=centery, z=0),
                                                    rotation=carla.Rotation(roll=0,pitch=0,yaw=np.rad2deg(yaw))))
+                vehicle.actor.set_target_velocity(carla.Vector3D(x=speed*math.cos(yaw),y=speed*math.sin(yaw),z=0))
+            if not vehicle.trajectory and not vehicle.isAutoPilot and vehicle.id!=self.ego_id:
+                self.setAutoPilot(vehicle)
             if vehicle.control:
                 self.shutdownAutoPilot(vehicle)
                 vehicle.actor.apply_control(vehicle.control)
-
     def removeArrivedVeh(self):
         needRemoved=[]
         for veh in self.vehicles:
@@ -678,7 +733,7 @@ class Model:
                 if len(route) == 2 and isinstance(route[0], (int, str)) and str(route[0]).isdigit():
                     # 索引格式: [247, 41]
                     start_idx_sp, end_idx_sp = map(int, route)
-                elif len(route) == 6:  # 坐标格式被分割成6个部分
+                elif len(route) == 6:  # 坐标格式分割成6个部分
                     # 坐标格式: ['(-60.490871', 239.699402, '0)', '(32.382332', 237.53667, '0)']
                     # 处理起始点
                     start_x = float(route[0].strip('('))
@@ -775,6 +830,7 @@ class Model:
                 self.collision_opponent=other_actor.id
                 with self.tpEnd_lock:
                     self.tpEnd=1
+                    self.saveBEV()
             elif isinstance(event,carla.LaneInvasionEvent):
                 marking_type = event.crossed_lane_markings[0].type
                 print('marking_type:',marking_type)
@@ -785,6 +841,7 @@ class Model:
                     print('laneInvasion type:',self.laneInvationType)
                     with self.tpEnd_lock:
                         self.tpEnd=1
+                        self.saveBEV()
                 
     
     def initVehicles(self):
@@ -802,6 +859,8 @@ class Model:
 
         vehicles=[]
         for id, actor in self.v_actors.items():
+            if id==self.ego_id:
+                continue
             start_waypoint = self.carla_map.get_waypoint(actor.get_location())
             route,end_waypoint=self.randomRoute(start_waypoint)
             vehicle = Vehicle(actor,start_waypoint, end_waypoint, self.vehicleVisbleRange,route)
@@ -820,7 +879,7 @@ class Model:
             cur_junction=self.roadgraph.get_lane_by_id(cur_lane_id)
             cur_edge=self.roadgraph.Edges[cur_junction.outgoing_edge_id]
             route=[cur_junction.incoming_edge_id]
-        #2.沿着连接关系去找终点，直到满足度限制：
+        #2.沿着连接关系去找终点，直到满足长度限制：
         search_length=0
         route.append(cur_edge.id)
         lane=None
@@ -908,11 +967,20 @@ class Model:
                 if veh.available_lanes and veh.route:
                         veh.next_available_lanes = veh.get_available_lanes(self.roadgraph)#help localization and egoplan
             except:
-                self.resetRoute(veh)
-                veh.available_lanes=self.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
-                veh.next_available_lanes = veh.get_available_lanes(self.roadgraph)#help localization and egoplan
-        
+                try:    
+                    self.resetRoute(veh)
+                    veh.available_lanes=self.roadgraph.get_all_available_lanes(veh.route, veh.end_waypoint)
+                    veh.next_available_lanes = veh.get_available_lanes(self.roadgraph)#help localization and egoplan
+                except:
+                    pass
     def record_result(self, start_time: float, result: bool, reason: str = "", error: Exception = None) -> None:
+        # self.roadgraph.wp_transform(self.carla_map)
+        # self.roadgraph.clear_traffic_lights()
+        # with open(self.map_cache_path, 'wb') as f:
+        #     dill.dump(self.roadgraph, f)
+        # print('save roadgraph speed limits info')#TODO:并行运行时，可能保存多个roadgraph，导致限速信息还是无法正确传递
+        
+        
         conn = sqlite3.connect(self.dataBase)
         cur = conn.cursor()
         if self.collision:

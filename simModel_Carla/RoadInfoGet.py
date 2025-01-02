@@ -323,7 +323,7 @@ class RoadInfoGet:
 if __name__ == '__main__':
     # -------------------- example ------------------- #
     client = carla.Client('localhost', 3000)
-    client.set_timeout(2.0)
+    client.set_timeout(20.0)
     client.load_world('Town06')
     world = client.get_world()
     carla_map = world.get_map()

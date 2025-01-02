@@ -88,7 +88,6 @@ if __name__=='__main__':
     while not model.tpEnd:
         model.moveStep()
         if model.shouldUpdate():
-
             roadgraph, vehicles = model.exportSce()
             try:
                 trajectories = planner.plan(
@@ -99,17 +98,16 @@ if __name__=='__main__':
                 del trajectories[model.ego_id]
             except:
                 trajectories=dict()
-
             model.setTrajectories(trajectories)
 
             print(model.ego.lane_id)
             print(model.ego.behaviour)
 
-            world=model.world
-            for veh in model.vehicles:
-                if veh.trajectory:
-                    for state in veh.trajectory.states:
-                        world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
+            # world=model.world
+            # for veh in model.vehicles:
+            #     if veh.trajectory:
+            #         for state in veh.trajectory.states:
+            #             world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
         
         #PDM model
         timestamp = CarlaDataProvider.get_world().get_snapshot().timestamp

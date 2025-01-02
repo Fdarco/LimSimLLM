@@ -102,7 +102,7 @@ class VLMAgent:
 
         payload = {
             "model": "gpt-4o-2024-08-06",
-            "temperature": 0.5,
+            "temperature": 0,#0.5,#temperature越高，模型输出越随机
             "messages": [
                 {
                     "role": "user",
@@ -116,16 +116,21 @@ class VLMAgent:
             headers=headers,
             json=payload
         )
+        
+        try_times = 0
         while  response.status_code != 200:
-            time.sleep(1)
+            time.sleep(2)
             response = requests.post(
             "https://api.key77qiqi.cn/v1/chat/completions",
             headers=headers,
             json=payload
             )
-        
-        print(response)
-        print(response.status_code)
+            try_times += 1
+            if response.status_code != 200:
+                print('模型请求失败,尝试次数:',try_times,'status code:',response.status_code)
+            if try_times > 5:
+                raise ValueError('模型请求失败')
+        print('模型请求成功')
         return response.json()
     
     def reset(self):
@@ -154,9 +159,10 @@ class VLMAgent:
             return Behaviour.LCR
         elif decision.capitalize() == 'Turn-left':
             return Behaviour.LCL
+        elif decision.capitalize() == 'Stop':
+            return Behaviour.STOP
         else:
             errorStr = f'The decision `{decision}` is not implemented yet!'
-        breakpoint()
         raise NotImplementedError(errorStr)
 
 
@@ -168,17 +174,15 @@ class VLMAgent:
         A function that makes a decision based on a prompt, measures the time it takes to make the decision, and returns various relevant data including the behavior, the decision message, prompt tokens, completion tokens, total tokens, and the time cost.
         """
         start = time.time()
-        max_retries = 3
+        max_retries = 5
         retry_count = 0
         
         while retry_count < max_retries:
             try:
                 response = self.request()
                 ans = response['choices'][0]['message']['content']
-                print(ans)
-                prompt_tokens = response['usage']['prompt_tokens']
-                completion_tokens = response['usage']['completion_tokens'] 
-                total_tokens = response['usage']['total_tokens']
+                print("="*25+'Response Start'+ "="*25 + "\n" + ans + "\n" + "="*25+'Response End'+ "="*25)
+
                 
                 match = re.search(r'## Decision\n(.*)', ans)
                 if not match:
@@ -192,6 +196,14 @@ class VLMAgent:
                 end = time.time()
                 timeCost = end - start               
                 self.reset()
+                if 'usage' in response:
+                    prompt_tokens = response['usage']['prompt_tokens']
+                    completion_tokens = response['usage']['completion_tokens'] 
+                    total_tokens = response['usage']['total_tokens']
+                else:
+                    prompt_tokens = 0
+                    completion_tokens = 0
+                    total_tokens = 0
                 return (behavior, ans, prompt_tokens, 
                         completion_tokens, total_tokens, timeCost)
                         
@@ -201,7 +213,7 @@ class VLMAgent:
                 if retry_count == max_retries:
                     breakpoint()
                     raise ValueError("达到最大重试次数,模型输出始终无法解析")
-                time.sleep(1)  # 等待1秒后重试
+                time.sleep(2)  # 等待2秒后重试
             
         
             
@@ -250,7 +262,6 @@ if __name__=='__main__':
     total_start_time = time.time()
 
     model:Model=Model(cfgFile=config_name,dataBase=database,port=int(arguments.port),tm_port=int(arguments.trafficManagerPort))
-
     planner = TrafficManager(model)
 
     model.start()
@@ -274,8 +285,8 @@ if __name__=='__main__':
             currentLaneInfo = descriptor.getCurrentLaneInfo(carlaRoadGraphWrapper(roadgraph), vehicles)
             # envInfo = descriptor.getEnvPrompt(carlaRoadGraphWrapper(roadgraph), vehicles)
             egoInfo = descriptor.getEgoInfo(vehicles)
-            
-            TotalInfo = '## Available actions\n\n' + actionInfo + '\n\n' + '## Navigation information\n\n' + currentLaneInfo + egoInfo + naviInfo
+            nextLaneInfo = descriptor.getNextLaneInfo(carlaRoadGraphWrapper(roadgraph), vehicles)
+            TotalInfo = '## Available actions\n\n' + actionInfo + '\n\n' + '## Navigation information\n\n'+ naviInfo + currentLaneInfo + egoInfo  + nextLaneInfo
 
             # get the image prompt: the left front, front, and right front
             images = model.getCARLAImage(1, 1)
@@ -293,9 +304,8 @@ if __name__=='__main__':
             gpt4v.addImageBase64(NPImageEncode(front_right_img))
             gpt4v.addTextPrompt(f'\nThe current frame information is:\n{TotalInfo}')
             gpt4v.addTextPrompt('Now, please tell me your answer. Please think step by step and make sure it is right.')
-            print(TotalInfo)
-            
-            
+            print("="*25+'Prompt Start'+ "="*25 + "\n" + TotalInfo + "\n" + "="*25+'Prompt End'+ "="*25)
+        
             # get the decision made by the driver agent
             (
                 behaviour, ans, 
@@ -319,13 +329,13 @@ if __name__=='__main__':
             model.setTrajectories(trajectories)
             print('ego lane:', model.ego.lane_id)
             model.ego.behaviour = Behaviour(behaviour)
-            print("timeStep:",model.timeStep,"behaviour:",model.ego.behaviour)
             
-            world=model.world
-            for veh in model.vehicles:
-                if veh.trajectory:
-                    for state in veh.trajectory.states:
-                        world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
+            # world=model.world
+            # for veh in model.vehicles:
+            #     if veh.trajectory:
+            #         for state in veh.trajectory.states:
+            #             world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
+        
         model.updateVeh()
 
     #according to collision sensor

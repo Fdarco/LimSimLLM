@@ -9,7 +9,7 @@ carlaImage: True
 vehicleSpawnInterval: 50
 vehicleVisibleRange: 100
 vehicleCheckRange: 50
-max_steps: 500 # 最大时间步限制
+max_steps: 1500 # 最大时间步限制
 init:
   veh_num: 30  # TODO: 根据直线场景需求调整车辆数量
   travel_distance: 2000  # TODO: 根据直线场景需求调整行驶距离 
