@@ -123,9 +123,11 @@ class TrafficManager:
                     vehicle.update_behaviour(roadgraph)
                 except Exception as e:
                     logging.error(f"Error when updating behaviour of vehicle {vehicle_id}: {e}")
-            if vehicle.vtype == VehicleType.EGO and self.config["EGO_PLANNER"]:#这里需要加EGO_PLANNER吗
+            if vehicle.vtype == VehicleType.EGO and self.config["EGO_PLANNER"]:
                 vehicles[ego_id].behaviour = ego_behaviour
-   
+            elif vehicle.vtype == VehicleType.EGO and not self.config["EGO_PLANNER"]:#use multivehicle planner to control ego car
+                vehicle.update_behaviour(roadgraph)
+
 
         # Decision Module
         ego_decision: EgoDecision = None

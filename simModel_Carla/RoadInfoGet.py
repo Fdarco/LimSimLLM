@@ -353,30 +353,55 @@ if __name__ == '__main__':
     # for item in roadgraph.Edges.items():
         # world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
 
-    # -------------------- test ------------------- #
-    spawn_points = carla_map.get_spawn_points() # 选出适合放置车辆的位置
-    origin = carla.Location(spawn_points[272].location)
-    destination = carla.Location(spawn_points[122].location)
-    end_waypoint=carla_map.get_waypoint(destination)
-    while end_waypoint.is_junction:
-        nxt_wps=end_waypoint.next(1)
-        end_waypoint=nxt_wps[0]
-    destination=end_waypoint.transform.location
-
-    grp = GlobalRoutePlanner(carla_map, 2)
-    route = grp.trace_route(origin, destination)
-    route_edge_list = roadgraph.get_route_edge(route)
-    print(route_edge_list)
+    # # -------------------- test ------------------- #
+    # spawn_points = carla_map.get_spawn_points() # 选出适合放置车辆的位置
+    # start_transform = spawn_points[247]
+    # end_transform = spawn_points[41]
     
+    # start_wp=carla_map.get_waypoint(start_transform.location)
+    # end_wp=carla_map.get_waypoint(end_transform.location)
+    
+    # # start_wp=start_wp.next(40)[0]
+    # # end_wp=end_wp.next(10)[0]
+    # # print('start_wp:',start_wp.transform.location)
+    # # print('end_wp:',end_wp.transform.location)
+    
+    
+    # origin = carla.Location(start_wp.transform.location)
+    # destination = carla.Location(end_wp.transform.location)
+    # end_waypoint=carla_map.get_waypoint(destination)
+    # while end_waypoint.is_junction:
+    #     nxt_wps=end_waypoint.next(1)
+    #     end_waypoint=nxt_wps[0]
+    # destination=end_waypoint.transform.location
+
+    # grp = GlobalRoutePlanner(carla_map, 2)
+    # route = grp.trace_route(origin, destination)
+    # route_edge_list = roadgraph.get_route_edge(route)
+    # print(route_edge_list)
+    
+    # for id,wp in enumerate(route):
+    #     # world.debug.draw_point(wp[0].transform.location, color=carla.Color(r=0, g=255, b=0), life_time=5000, size=0.1)
+    #     world.debug.draw_string(wp[0].transform.location,str(id) ,color=carla.Color(r=0, g=0, b=255), life_time=5000)
+    
+    
+    # 在指定位置绘制点
+    target_location = carla.Location(x=-60.490871, y=239.699402, z=0.0)
+    world.debug.draw_point(target_location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=0.3)
+    world.debug.draw_string(target_location, "Target Point", draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=5000)
+    
+    # 设置相机视角
+    spectator = world.get_spectator()
+    camera_transform = carla.Transform(target_location + carla.Location(z=50), 
+                                     carla.Rotation(pitch=-90, yaw=0, roll=0))
+    spectator.set_transform(camera_transform)
+    
+    world.tick()
+
     #------------------------choose------------------------#
-    # for idx,spwp in enumerate(carla_map.get_spawn_points()):
-    #     world.debug.draw_point(spwp.location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
-    #     world.debug.draw_string(spwp.location,str(idx), draw_shadow=False,color=carla.Color(r=255, g=0, b=0), life_time=5000)
-
-
-    for id,wp in enumerate(route):
-        # world.debug.draw_point(wp[0].transform.location, color=carla.Color(r=0, g=255, b=0), life_time=5000, size=0.1)
-        world.debug.draw_string(wp[0].transform.location,str(id) ,color=carla.Color(r=0, g=0, b=255), life_time=5000)
+    for idx,spwp in enumerate(carla_map.get_spawn_points()):
+        world.debug.draw_point(spwp.location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
+        world.debug.draw_string(spwp.location,str(idx), draw_shadow=False,color=carla.Color(r=255, g=0, b=0), life_time=5000)
 
     # available_dict = roadgraph.get_all_available_lanes(route_edge_list, route[-1][0])
 

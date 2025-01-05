@@ -34,7 +34,7 @@ class Hyper_Parameter():
         self.TTC_THRESHOLD = 5
 
         self.stop_distance = 15.0
-        self.judge_speed = 0.5
+        self.judge_speed = 1
         self.speed_limit_k = 1.0 # the speed_limit_k lower, penalty bigger
 
     def calculate_acc_score(self, acc: float, acc_ref: AccJerk_Ref) -> float:
@@ -87,9 +87,29 @@ class Decision_Score():
         return (hyper_parameter.score_weight["comfort"] * self.comfort + hyper_parameter.score_weight["efficiency"] * self.efficiency + hyper_parameter.score_weight["safety"] * self.safety) * self.red_light * self.speed_limit
 
 class Score_List(list):
-    def __init__(self):
+    def __init__(self,logging=None):
         super().__init__()
         self.penalty = 1.0
+        # Initialize logging
+        self.logging = logging
+
+    def logging_score(self, hyper_parameter: Hyper_Parameter)-> float:
+        """Log detailed scores
+
+        Args:
+            hyper_parameter (Hyper_Parameter): The hyper-parameter set in this program, see it in the Hyper_Parameter class.
+
+        Returns:
+            float: The score for each frame decision.
+        """
+        self.logging.info("=== Detailed Scores ===")
+        self.logging.info(f"Comfort Score: {round(self.saved_weighted_comfort, 3)} (Weight: {hyper_parameter.score_weight['comfort']}, unWeighted Score: {round(self.saved_comfort, 3)})")
+        self.logging.info(f"Efficiency Score: {round(self.saved_weighted_efficiency, 3)} (Weight: {hyper_parameter.score_weight['efficiency']}, unWeighted Score: {round(self.saved_efficiency, 3)})")
+        self.logging.info(f"Safety Score: {round(self.saved_weighted_safety, 3)} (Weight: {hyper_parameter.score_weight['safety']}, unWeighted Score: {round(self.saved_safety, 3)})")
+        self.logging.info(f"Red Light Penalty: {round(self.saved_red_light, 3)}")
+        self.logging.info(f"Speed Limit Penalty: {round(self.saved_speed_limit_penalty, 3)} ")
+        self.logging.info(f"Fail Penalty: {round(self.saved_penalty, 3)}")
+        self.logging.info(f"Final Score: {round(self.saved_final_score, 3)},formation:Final Score = (weighted_comfort + weighted_efficiency + weighted_safety) * red_light_penalty * speed_limit_penalty * fail_penalty")
 
     def eval_score(self, hyper_parameter: Hyper_Parameter)-> float:
         """Calculate the driving score for the LLM Driver in this route.
@@ -105,7 +125,7 @@ class Score_List(list):
             float: Driving score for the LLM Driver
         """
         comfort = 0.0
-        efficiency = 0.0
+        efficiency = 0.0 
         speed_limit = 0
         safety = 0.0
         red_light = 1.0
@@ -127,8 +147,29 @@ class Score_List(list):
             safety = 0.0
             speed_limit = 0
             speed_limit_penalty = 1.0
-        return (hyper_parameter.score_weight["comfort"] * comfort + hyper_parameter.score_weight["efficiency"] * efficiency + hyper_parameter.score_weight["safety"] * safety) * red_light * speed_limit_penalty * self.penalty * 100
-    
+            
+        # Calculate weighted scores
+        weighted_comfort = hyper_parameter.score_weight["comfort"] * comfort
+        weighted_efficiency = hyper_parameter.score_weight["efficiency"] * efficiency  
+        weighted_safety = hyper_parameter.score_weight["safety"] * safety
+        
+        # Calculate final score
+        final_score = (weighted_comfort + weighted_efficiency + weighted_safety) * red_light * speed_limit_penalty * self.penalty * 100
+        self.save_score(comfort, weighted_comfort, efficiency, weighted_efficiency, safety, weighted_safety, red_light, speed_limit_penalty, self.penalty, final_score)
+        return final_score
+
+    def save_score(self, comfort, weighted_comfort, efficiency, weighted_efficiency, safety, weighted_safety, red_light, speed_limit_penalty, penalty, final_score):
+        self.saved_comfort = comfort
+        self.saved_weighted_comfort = weighted_comfort
+        self.saved_efficiency = efficiency
+        self.saved_weighted_efficiency = weighted_efficiency
+        self.saved_safety = safety
+        self.saved_weighted_safety = weighted_safety
+        self.saved_red_light = red_light
+        self.saved_speed_limit_penalty = speed_limit_penalty
+        self.saved_penalty = penalty
+        self.saved_final_score = final_score
+
     def fail_result(self):
         self.penalty = 0.6
 

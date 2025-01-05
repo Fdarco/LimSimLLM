@@ -336,13 +336,14 @@ class Model:
                 self.tpEnd = 1
             return
 
+        self.getSce()
         if self.shouldUpdate():
-            self.getSce()
             self.putRenderData()
             if self.cfg['carlaImage']:
                 self.putCARLAImage()
-            if not self.tpStart:
-                self.tpStart = 1
+
+        if not self.tpStart:
+            self.tpStart = 1
                 
         if self.timeStep%20==0:
             self.saveBEV()
@@ -454,14 +455,19 @@ class Model:
         #检查ego车辆是否在正常行驶车道上
         check_wp = self.carla_map.get_waypoint(carla.Location(x=vehicle.state.x, y=vehicle.state.y, z=z), project_to_road=False)
         if vehicle.id == self.ego_id:
-            print('ego actor speed:', vehicle.actor.get_velocity().length(),'ego vehicle speed:', vehicle.state.vel)
-            print('ego actor accel:', vehicle.actor.get_acceleration().length(),'ego vehicle accel:', vehicle.state.acc)
-            if check_wp is None or check_wp.lane_type != carla.LaneType.Driving:
+            if self.shouldUpdate():
+                print('ego actor speed:', vehicle.actor.get_velocity().length(),'ego vehicle speed:', vehicle.state.vel)
+                print('ego actor accel:', vehicle.actor.get_acceleration().length(),'ego vehicle accel:', vehicle.state.acc)
+            if check_wp is None or check_wp.lane_type != carla.LaneType.Driving and not self.laneInvation:
                 self.laneInvation = True
+            elif check_wp is None or check_wp.lane_type != carla.LaneType.Driving and self.laneInvation:
                 self.laneInvationType = None if check_wp is None else check_wp.lane_type
                 print('Vehicle left normal driving lane')
                 with self.tpEnd_lock:
                     self.tpEnd = 1
+            else:
+                self.laneInvation = False
+                self.laneInvationType = None
         #get route_idx
         lane=self.roadgraph.get_lane_by_id(lane_id=vehicle.lane_id)
         try:
@@ -489,9 +495,12 @@ class Model:
             vehicle.speedQ.append(carla_vel.length())
             vehicle.accelQ.append(vehicle.actor.get_acceleration().length())#TODO:如果是减速度，不会被体现出来
         else:
-            vehicle.speedQ.append(vehicle.state.vel)
-            vehicle.accelQ.append(vehicle.state.acc)
-        
+            vehicle.speedQ.append(carla_vel.length())
+            vehicle.accelQ.append(vehicle.actor.get_acceleration().length())
+            # vehicle.speedQ.append(vehicle.state.vel)
+            # vehicle.accelQ.append(vehicle.state.acc)
+        if vehicle.id == self.ego_id:
+            print('vel diff carla and state:',carla_vel.length()-vehicle.state.vel)
         vehicle.vxQ.append(carla_vel.x)
         vehicle.vyQ.append(carla_vel.y)
 
@@ -632,7 +641,7 @@ class Model:
     def removeArrivedVeh(self):
         needRemoved=[]
         for veh in self.vehicles:
-            if veh!=self.ego and (veh.arrive_destination() or not veh.actor.is_active):
+            if veh!=self.ego and ((veh.actor.is_active and veh.arrive_destination()) or not veh.actor.is_active):
                 needRemoved.append(veh)
                 continue
             elif veh!=self.ego and veh.actor.is_active:
@@ -1033,7 +1042,7 @@ if __name__=='__main__':
     model.record_result(total_start_time, True, None)
 
     while not model.tpEnd:
-        model.moveStep()#TODO:add collisioncheck
+        model.moveStep()
         if model.shouldUpdate():
 
             roadgraph, vehicles = model.exportSce()

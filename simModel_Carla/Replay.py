@@ -17,7 +17,7 @@ import carla
 class ReplayModel:
     def __init__(self, dataBase: str, startFrame: int = None) -> None:
         
-        self.updateInterval=10
+        self.updateInterval=1
         
         #设置回放起始帧
         print(

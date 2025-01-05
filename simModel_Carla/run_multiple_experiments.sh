@@ -4,13 +4,14 @@
 pkill -f "python.*Example"
 
 # 实验轮次
-NUM_EXPERIMENTS=1  # 添加实验轮次参数
+NUM_EXPERIMENTS=5  # 添加实验轮次参数
 
 # 模型和场景配置
 MODELS=( 
     # "interfuser"
-    "PDM" 
-    # "VLMagentCloseLoop"
+    # "PDM" 
+    "VLMagentCloseLoop"
+    # "Limsimtm"
 )
 
 SCENARIOS=(

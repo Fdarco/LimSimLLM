@@ -62,18 +62,20 @@ if __name__=='__main__':
     # sum_dist=0
     # for j,wp in enumerate(route):
     #     world.debug.draw_point(wp[0].location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
-    # # world.debug.draw_point(route[-1][0].location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=5)
+    #     world.debug.draw_string(wp[0].location, str(j), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
     #     sum_dist+= 0 if j==0 else route[j][0].location.distance(route[j-1][0].location)
+    # world.debug.draw_point(route[-1][0].location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=5)
+    
     # settings = world.get_settings()
     # settings.synchronous_mode = False
     # settings.fixed_delta_seconds = None
     # world.apply_settings(settings)
-    # print(model.ego.route)
-    # print(f'distance:{sum_dist}')
+    # # print(model.ego.route)
+    # # print(f'distance:{sum_dist}')
     
     
-    # for item in model.roadgraph.Edges.items():
-    #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
+    # # for item in model.roadgraph.Edges.items():
+    # #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
     # breakpoint()    
     
     pdm.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm

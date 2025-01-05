@@ -544,6 +544,8 @@ class EnvDescription:
         # judge the vehicle lane and position
         # current_lane = roadgraph.get_lane_by_id(vehicle.lane_id)
         prediction_trajectory = Trajectory()
+        if vehicle['availableLanes'] == None:
+            return []
         next_lane = roadgraph.get_available_next_lane(
             vehicle["laneIDQ"][-1], vehicle["availableLanes"])
         current_lane = roadgraph.get_lane_by_id(vehicle["laneIDQ"][-1])

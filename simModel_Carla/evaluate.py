@@ -37,7 +37,7 @@ class Evaluator:
         self.logging = logging.getLogger("Evaluation").getChild(__name__)
         self.createTable(database)
         
-        self.deltaT=1#0.1
+        self.deltaT=0.1
     
     @property
     def score(self):
@@ -71,11 +71,11 @@ class Evaluator:
 class Decision_Evaluator(Evaluator):
     def __init__(self, database: str, timeStep: float,file_name="closeloopEvaluation_result.log") -> None:
         super().__init__(database, timeStep,file_name)
-        self.decision_score = Score_List() 
+        self.decision_score = Score_List(self.logging) 
         self.hyper_parameter = Hyper_Parameter()
         self.ttc_score = []
         self.red_junctionlane_record = []
-        
+        self.fail_reason = ""
         
     def createTable(self, database) -> None:
         conn = sqlite3.connect(database)
@@ -122,12 +122,11 @@ class Decision_Evaluator(Evaluator):
             model (ReplayModel): class containing current frame information
         """
         self.current_reasoning = ""
-        
         # 1. calculate ttc: calculate the ego states and other car states in future 5s, take it as ttc(s)
         self.ttc_score.append(self.calculate_ttc(model) / self.hyper_parameter.TTC_THRESHOLD)
         
         # 2. calculate decision score each 10 frames
-        if model.timeStep - self.current_time > 150 and model.timeStep % 10 == 0:
+        if model.timeStep - self.current_time > 30 and model.timeStep % 10 == 0:
             current_decision_score = Decision_Score() # each decision's score
             self.Current_Decision_Score(model, current_decision_score)
             self.decision_score.append(current_decision_score)
@@ -142,6 +141,7 @@ class Decision_Evaluator(Evaluator):
             if not self.getResult(model):
                 self.decision_score.fail_result()
                 self.logger.error("the result is failed")
+                self.logger.error("the fail reason is {}".format(self.fail_reason))
                 self.driving_mile += model.sr.ego.lanePos
                 print(self.driving_mile, " ", self.route_length)
             else:
@@ -156,6 +156,8 @@ class Decision_Evaluator(Evaluator):
             self.logger.info("your driving mile is {} m, the route length is {} m, the complete percentage is {}%".format(round(self.driving_mile, 3), round(self.route_length, 3), round(self.complete_p*100, 3)))
             self.logger.info("your driving score is {}".format(round(self.decision_score.eval_score(self.hyper_parameter), 3)))
             self.logger.info("your driving time is {} s".format((model.timeStep - self.current_time)/10))
+
+            self.decision_score.logging_score(self.hyper_parameter)
             
         return
     def cal_route_length(self, model: ReplayModel) -> float:
@@ -176,7 +178,11 @@ class Decision_Evaluator(Evaluator):
         try:
             result, fail_reason = cur.fetchone()
             conn.close()
-            return fail_reason == ''
+            if fail_reason == '':
+                return True
+            else:
+                self.fail_reason = fail_reason
+                return False
         except:
             conn.close()
             return False
@@ -242,8 +248,8 @@ class Decision_Evaluator(Evaluator):
         
         # 如果当前车道没有速度限制，使用默认值
         if not speed_limit:
-            speed_limit = 13.89  # 默认50km/h = 13.89m/s
-            self.current_reasoning += "Warning: Using default speed limit (50km/h) as lane speed limit is not available\n"
+            speed_limit = 11.11  # 默认40km/h = 11.11m/s
+            self.current_reasoning += "Warning: Using default speed limit (40km/h) as lane speed limit is not available\n"
             
         ego_history_speed = list(model.ego.speedQ)[-10::]
         
@@ -289,7 +295,7 @@ class Decision_Evaluator(Evaluator):
         ego_speed = np.where(ego_speed > speed_limit, ego_speed - speed_limit, 0)  
         if np.count_nonzero(ego_speed) > 0:
             decision_score.speed_limit = 0.9
-            self.current_reasoning += "you exceed the speed limit\n"
+            self.current_reasoning += f"you exceed the speed limit (current speed: {ego_speed} m/s, speed limit: {speed_limit} m/s)\n"
         else:
             decision_score.speed_limit = 1.0
 
@@ -315,6 +321,7 @@ class Decision_Evaluator(Evaluator):
         Returns:
             float: comfort score
         """
+        #TODO: do i have to save data per frame rather than per 10 frames?
         ego_history_acc = list(ego_vehicle.accelQ)[-11::]
 
         # 1. calculate longitudinal acc score
@@ -363,9 +370,12 @@ class Decision_Evaluator(Evaluator):
     def PassRedLight(self, model: ReplayModel) -> bool:
         # get the new 10 frames info, if the current lane is junction and last lane is normallane
         # judge the traffic light
+        # current_lane = model.roadgraph.get_lane_by_id(model.ego.laneID)
+        # if hasattr(current_lane,'currTlState') and current_lane.currTlState != None:
+        #     print('current_lane.currTlState at times:',model.timeStep,current_lane.currTlState,current_lane.id)
         if len(model.ego.laneIDQ) < 11:
             return False
-        if model.ego.laneID in model.roadgraph.Junction_Dict and model.sr.ego.laneIDQ[-11][0] not in model.roadgraph.Junction_Dict and model.ego.laneID not in self.red_junctionlane_record:
+        if model.ego.laneID in model.roadgraph.Junction_Dict and model.sr.ego.laneIDQ[-11] not in model.roadgraph.Junction_Dict and model.ego.laneID not in self.red_junctionlane_record:
             current_lane = model.roadgraph.get_lane_by_id(model.ego.laneID)
             if current_lane.currTlState != None:
                 if current_lane.currTlState == "r" or current_lane.currTlState == "R":
@@ -396,16 +406,37 @@ class Decision_Evaluator(Evaluator):
         return False
     
     def CalculateDrivingMile(self, model: ReplayModel) -> None:
-        #TODO: need to be re-applied
-        # 如果车辆刚进入新的lane,加上上一个lane的长度
-        try:
-            if model.sr.ego.laneIDQ[-2] != model.sr.ego.laneIDQ[-1]:
-                # 获取上一个lane的长度
-                last_lane = model.rb.get_lane_by_id(model.sr.ego.laneIDQ[-2])
-                self.driving_mile += last_lane.length
-        except:
-            breakpoint()
+        """计算行驶里程
+        每10帧计算一次,需要考虑:
+        1. 同一车道内的行驶距离
+        2. 换道时的距离计算
+        3. 进入junction时的距离计算
+        """
+        # 获取10帧前和当前帧的车道ID和位置
+        prev_lane_id = model.sr.ego.laneIDQ[-11] 
+        curr_lane_id = model.sr.ego.laneIDQ[-1]
+        prev_pos = model.ego.lanePosQ[-11]
+        curr_pos = model.ego.lanePosQ[-1]
         
+        if prev_lane_id == curr_lane_id:
+            # 同一车道,直接计算位置差
+            self.driving_mile += max(0, curr_pos - prev_pos)
+        else:
+            # 换道/进入junction,需要分段计算
+            # 1. 计算在上一个车道行驶的距离
+            prev_lane = model.rb.get_lane_by_id(prev_lane_id)
+            if prev_lane:
+                self.driving_mile += max(0, prev_lane.length - prev_pos)
+                
+            # 2. 计算在当前车道行驶的距离
+            self.driving_mile += max(0, curr_pos)
+            
+            # # 3. 如果中间还经过其他车道,加上这些车道的长度
+            # lane_sequence = model.sr.ego.laneIDQ[-11:-1]
+            # for lane_id in lane_sequence:
+            #     lane = model.rb.get_lane_by_id(lane_id)
+            #     if lane and lane_id != prev_lane_id and lane_id != curr_lane_id:
+            #         self.driving_mile += lane.length
         return
 
     def SaveResultinDB(self, model: ReplayModel) -> None:

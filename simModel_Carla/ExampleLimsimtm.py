@@ -16,10 +16,6 @@ from math import sqrt
 import random
 from dataclasses import field
 from datetime import datetime
-from AD_algo.Interfuser.interfuser_agent import InterfuserAgent
-from scenario_runner.srunner.scenariomanager.carla_data_provider import CarlaDataProvider
-from scenario_runner.srunner.scenariomanager.timer import GameTime
-from leaderboard_util import initDataProvider,route_transform,setup_sensors
 
 if __name__=='__main__':
     description = "limsim evaluation: evaluate your Agent in limsim Carla\n"
@@ -49,60 +45,24 @@ if __name__=='__main__':
     model:Model=Model(cfgFile=config_name,dataBase=database,port=int(arguments.port),tm_port=int(arguments.trafficManagerPort))
 
     planner = TrafficManager(model)
-
+    planner.config["EGO_PLANNER"] = False
+    planner.config['EGO_CONTROL'] = True
 
     model.start()
     model.runAutoPilot()
+    
+    
+    gui = GUI(model)
+    gui.start()
 
-    #DATAPROVIDER Initiate
-    initDataProvider(model)#CarlaDataProvider的记录actor只能记录调用他的方法生成的actor，导致无法与ego连接，新写一个函数
-    GameTime.restart()
-    
-    #Interfuser Agent settup
-    model_names= timm.list_models()
-    path_to_config=os.path.join('AD_algo/Interfuser','interfuser_config.py')
-    interfuser=InterfuserAgent(path_to_config)
-    gps_route,route=route_transform(model.roadgraph,model.ego)
-    
-    # world=model.world
-    # idx=0
-    # for wp in route:
-    #     world.debug.draw_point(wp[0].location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
-    #     world.debug.draw_string(wp[0].location,str(idx), color=carla.Color(r=0, g=0, b=255), life_time=5000)
-    #     idx+=1
-    # world.debug.draw_point(route[-1][0].location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=0.1)
-    
-    # settings = world.get_settings()
-    # settings.synchronous_mode = False
-    # settings.fixed_delta_seconds = None
-    # world.apply_settings(settings)    
-    
-    # for item in model.roadgraph.Edges.items():
-    #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
-    # breakpoint()
-    
-    interfuser.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm
-    # interfuser.setup(path_to_config)
-    setup_sensors(interfuser,model.ego.actor)
-    
-    # gui = GUI(model)
-    # gui.start()
-
-    # breakpoint()
     while not model.tpEnd:
         model.moveStep()
         if model.shouldUpdate():
 
             roadgraph, vehicles = model.exportSce()
-            try:
-                trajectories = planner.plan(
-                    model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
-                )
-                if model.ego_id in trajectories:
-                    print('ego planned',end=' ')
-                del trajectories[model.ego_id]
-            except:
-                trajectories=dict()
+            trajectories = planner.plan(
+                model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
+            )
 
             model.setTrajectories(trajectories)
 
@@ -115,19 +75,13 @@ if __name__=='__main__':
             #         for state in veh.trajectory.states:
             #             world.debug.draw_point(carla.Location(x=state.x,y=state.y,z=0.5),color=carla.Color(r=0, g=0, b=255), life_time=1, size=0.1)
         
-        #Interfuser model
-        timestamp = CarlaDataProvider.get_world().get_snapshot().timestamp
-        GameTime.on_carla_tick(timestamp)
-        CarlaDataProvider.on_carla_tick()#主要更新内部记录的状态数据
-        ego_action = interfuser()
-        controls={model.ego.id:ego_action}
-        model.setControls(controls)
+
         model.updateVeh()
 
     #according to collision sensor
     model.record_result(total_start_time, True)
 
     # model.destroy()
-    # gui.terminate()
-    # gui.join()
+    gui.terminate()
+    gui.join()
 

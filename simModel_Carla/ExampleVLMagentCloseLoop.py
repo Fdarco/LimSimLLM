@@ -273,7 +273,6 @@ if __name__=='__main__':
 
     # init GPT-4V-based driver agent
     gpt4v = VLMAgent()
-    
     while not model.tpEnd:
         model.moveStep()
         if model.shouldUpdate():
@@ -286,11 +285,12 @@ if __name__=='__main__':
             # envInfo = descriptor.getEnvPrompt(carlaRoadGraphWrapper(roadgraph), vehicles)
             egoInfo = descriptor.getEgoInfo(vehicles)
             nextLaneInfo = descriptor.getNextLaneInfo(carlaRoadGraphWrapper(roadgraph), vehicles)
-            TotalInfo = '## Available actions\n\n' + actionInfo + '\n\n' + '## Navigation information\n\n'+ naviInfo + currentLaneInfo + egoInfo  + nextLaneInfo
-
+            nearbyVehInfo = descriptor.getOtherVehicleInfo(carlaRoadGraphWrapper(roadgraph), vehicles)
+            TotalInfo = '## Available actions\n\n' + actionInfo + '\n\n' + '## Navigation information\n\n'+ naviInfo + currentLaneInfo + egoInfo  + nextLaneInfo  + nearbyVehInfo
             # get the image prompt: the left front, front, and right front
             images = model.getCARLAImage(1, 1)
             if not images:
+                print('No image captured')
                 continue
             front_img = images[-1].CAM_FRONT
             front_left_img = images[-1].CAM_FRONT_LEFT
@@ -315,7 +315,7 @@ if __name__=='__main__':
             # put the decision into the database
             
             qa = QuestionAndAnswer(
-                currentLaneInfo+egoInfo, naviInfo, actionInfo, '', 
+                currentLaneInfo+egoInfo+nextLaneInfo+nearbyVehInfo, naviInfo, actionInfo, '', 
                 ans, prompt_tokens, completion_tokens, total_tokens, 
                 timecost, int(behaviour)
             )

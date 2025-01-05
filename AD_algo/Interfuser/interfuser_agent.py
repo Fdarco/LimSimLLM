@@ -34,7 +34,7 @@ except ImportError:
 #TODO:SAVE_PATH set None
 SAVE_PATH = os.environ.get("SAVE_PATH", 'eval')
 SAVE_PATH = "/data/limsim-o/LimSimLLM/E2ESAVE"
-# SAVE_PATH = None
+SAVE_PATH = None
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
 

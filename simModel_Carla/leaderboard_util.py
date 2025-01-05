@@ -178,8 +178,42 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
                 if route[p][0].location.distance(wp_tulpe[0].location)<=0.3:
                     del route[p]
                 p+=1
+    # 在返回之前添加最终清理步骤
+    final_route = []
+    idx = 0
+    while idx < len(route):
+        current_transform, connection = route[idx]
+        
+        # 检查是否需要添加当前点
+        should_add = True
+        current_wp = CarlaDataProvider.get_map().get_waypoint(current_transform.location)
+        
+        # 检查前后点的车道情况
+        if idx > 0 and idx < len(route) - 1:
+            prev_wp = CarlaDataProvider.get_map().get_waypoint(route[idx-1][0].location)
+            next_wp = CarlaDataProvider.get_map().get_waypoint(route[idx+1][0].location)
+            
+            # 如果当前点与前后点都不在同一车道，且前后点在同一车道，说明这是一个孤立的变道点
+            if (not on_same_lane(current_wp, prev_wp) and 
+                not on_same_lane(current_wp, next_wp) and 
+                on_same_lane(prev_wp, next_wp)):
+                # 计算前后点的距离，如果距离合理，则删除当前点
+                dist = route[idx-1][0].location.distance(route[idx+1][0].location)
+                if dist < 8.0:  # 使用更大的阈值，因为这是跨越整个变道的距离
+                    should_add = False
+                    print(f"Removing isolated lane change point at index {idx}")
+        
+        if should_add:
+            final_route.append((current_transform, connection))
+        idx += 1
+    
+    # 更新route为清理后的路径
+    route = final_route
+    
+    route.append((veh.end_waypoint.next(3.0)[0].transform,route[-1][1]))
+    route.append((veh.end_waypoint.next(6.0)[0].transform,route[-1][1]))
+    route.append((veh.end_waypoint.next(10.0)[0].transform,route[-1][1]))
 
-    route.append((veh.end_waypoint.transform,route[-1][1]))
     return gps_route, route
 
 
