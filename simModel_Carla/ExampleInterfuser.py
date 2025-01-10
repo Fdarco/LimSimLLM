@@ -20,7 +20,7 @@ from AD_algo.Interfuser.interfuser_agent import InterfuserAgent
 from scenario_runner.srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from scenario_runner.srunner.scenariomanager.timer import GameTime
 from leaderboard_util import initDataProvider,route_transform,setup_sensors
-
+from DataQueue import QuestionAndAnswer
 if __name__=='__main__':
     description = "limsim evaluation: evaluate your Agent in limsim Carla\n"
     
@@ -62,7 +62,13 @@ if __name__=='__main__':
     model_names= timm.list_models()
     path_to_config=os.path.join('AD_algo/Interfuser','interfuser_config.py')
     interfuser=InterfuserAgent(path_to_config)
-    gps_route,route=route_transform(model.roadgraph,model.ego)
+    gps_route,route=route_transform(model.roadgraph,model.ego,2.0)
+
+    route_length = 0.0 
+    for idx,wp in enumerate(route):
+        if idx!=len(route)-1:
+            route_length+=wp[0].location.distance(route[idx+1][0].location)
+    model.simDescriptionCommit(route_length)
     
     # world=model.world
     # idx=0
@@ -79,8 +85,6 @@ if __name__=='__main__':
     
     # for item in model.roadgraph.Edges.items():
     #     model.world.debug.draw_string(item[1].last_segment[0].transform.location, str(item[0]), draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=10000)
-    # breakpoint()
-    
     interfuser.set_global_plan(gps_route,route)#将model中的全局路径传递给pdm
     # interfuser.setup(path_to_config)
     setup_sensors(interfuser,model.ego.actor)
@@ -94,20 +98,24 @@ if __name__=='__main__':
         if model.shouldUpdate():
 
             roadgraph, vehicles = model.exportSce()
-            try:
-                trajectories = planner.plan(
+            trajectories = planner.plan(
                     model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
                 )
-                if model.ego_id in trajectories:
-                    print('ego planned',end=' ')
-                del trajectories[model.ego_id]
-            except:
-                trajectories=dict()
+            if model.ego_id in trajectories:
+                print('ego planned',end=' ')
+            del trajectories[model.ego_id]
+            # try:
+            #     trajectories = planner.plan(
+            #         model.timeStep * 0.1, roadgraph, vehicles, model.ego.behaviour, other_plan=True
+            #     )
+            #     if model.ego_id in trajectories:
+            #         print('ego planned',end=' ')
+            #     del trajectories[model.ego_id]
+            # except:
+            #     trajectories=dict()
+            #     breakpoint()
 
             model.setTrajectories(trajectories)
-
-            print(model.ego.lane_id)
-            print(model.ego.behaviour)
 
             # world=model.world
             # for veh in model.vehicles:
@@ -119,7 +127,13 @@ if __name__=='__main__':
         timestamp = CarlaDataProvider.get_world().get_snapshot().timestamp
         GameTime.on_carla_tick(timestamp)
         CarlaDataProvider.on_carla_tick()#主要更新内部记录的状态数据
+        start = time.time()
         ego_action = interfuser()
+        end = time.time()
+        timeCost = end - start
+        qa = QuestionAndAnswer('', '', '', '', f'Interfuser: {timeCost:.4f}s', 
+                               0, 0, 0, timeCost, 0)
+        model.putQA(qa)
         controls={model.ego.id:ego_action}
         model.setControls(controls)
         model.updateVeh()

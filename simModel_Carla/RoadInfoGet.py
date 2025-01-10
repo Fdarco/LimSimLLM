@@ -322,7 +322,7 @@ class RoadInfoGet:
             
 if __name__ == '__main__':
     # -------------------- example ------------------- #
-    client = carla.Client('localhost', 3000)
+    client = carla.Client('localhost', 3100)
     client.set_timeout(20.0)
     client.load_world('Town06')
     world = client.get_world()
@@ -386,7 +386,8 @@ if __name__ == '__main__':
     
     
     # 在指定位置绘制点
-    target_location = carla.Location(x=-60.490871, y=239.699402, z=0.0)
+    target_location = carla.Location(x=57.910871, y=244.5624, z=0.3)
+
     world.debug.draw_point(target_location, color=carla.Color(r=255, g=0, b=0), life_time=5000, size=0.3)
     world.debug.draw_string(target_location, "Target Point", draw_shadow=False, color=carla.Color(r=255, g=0, b=0), life_time=5000)
     
@@ -402,6 +403,8 @@ if __name__ == '__main__':
     for idx,spwp in enumerate(carla_map.get_spawn_points()):
         world.debug.draw_point(spwp.location, color=carla.Color(r=0, g=0, b=255), life_time=5000, size=0.1)
         world.debug.draw_string(spwp.location,str(idx), draw_shadow=False,color=carla.Color(r=255, g=0, b=0), life_time=5000)
+        if idx==427:
+            print(spwp.location)
 
     # available_dict = roadgraph.get_all_available_lanes(route_edge_list, route[-1][0])
 

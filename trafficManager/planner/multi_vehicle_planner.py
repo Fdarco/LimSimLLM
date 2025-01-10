@@ -17,6 +17,8 @@ from utils.roadgraph import AbstractLane, JunctionLane, NormalLane, RoadGraph
 from utils.trajectory import Trajectory, State
 from utils.obstacles import DynamicObstacle, ObsType, Rectangle
 
+import math
+
 logging = logger.get_logger(__name__)
 
 
@@ -31,7 +33,7 @@ class MultiVehiclePlanner(AbstractMultiPlanner):
         plan_result: Dict[int, Trajectory] = {}
         for vehicle in controlled_observation.vehicles:
             start = time.time()
-            if vehicle.vtype == VehicleType.OUT_OF_AOI and not vehicle.available_lanes:#AOI内的车如果available_lanes为None，由AutoPilot控制
+            if vehicle.vtype == VehicleType.OUT_OF_AOI or not vehicle.available_lanes:#AOI内的车如果available_lanes为None，由AutoPilot控制
                 continue
             if config["EGO_PLANNER"] and vehicle.vtype == VehicleType.EGO:
                 continue
@@ -71,7 +73,7 @@ class MultiVehiclePlanner(AbstractMultiPlanner):
                 )
             else:
                 # Keep Lane
-                if vehicle.current_state.s_d >= 10 / 3.6:
+                if vehicle.current_state.s_d >= 60 / 3.6:
                     path = None
                     if config["USE_DECISION_MAKER"] and decision_list is not None:
                         path = traj_generator.decision_trajectory_generator(
@@ -138,6 +140,7 @@ class MultiVehiclePlanner(AbstractMultiPlanner):
         else:
             logging.error(
                 f"Vehicle {vehicle.id} has unknown behaviour {vehicle.behaviour}")
+
 
         return path
 

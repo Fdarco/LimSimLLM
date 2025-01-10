@@ -18,7 +18,7 @@ from simInfo.CustomExceptions import (
 )
 import imageio
 from simModel_Carla.Camera import CAMActor
-
+from leaderboard_util import route_transform
 import carla
 from carla import Location, Rotation, Transform
 from agents.navigation.behavior_agent import BehaviorAgent
@@ -147,7 +147,7 @@ class Model:
                     veh.route=route 
                     veh.end_waypoint=end_waypoint
             
-        self.simDescriptionCommit()
+        # self.simDescriptionCommit()
         # --------- carla sync mode ---------- #
         settings = self.world.get_settings()
         settings.synchronous_mode = True
@@ -161,63 +161,68 @@ class Model:
 
         self.timeStep=0
 
-    def simDescriptionCommit(self):
+    def simDescriptionCommit(self,route_length=0):
         # Calculate route length using ego's route and available lanes
-        route_length = 0.0
-        available_lanes = self.roadgraph.get_all_available_lanes(self.ego.route, self.ego.end_waypoint)
+        # gps_route,route=route_transform(self.roadgraph,self.ego)
+        # route_length = 0.0 
+        # for idx,wp in enumerate(route):
+        #     if idx!=len(route)-1:
+        #         route_length+=wp[0].location.distance(route[idx+1][0].location)
+        # route_length = 0.0
+        # available_lanes = self.roadgraph.get_all_available_lanes(self.ego.route, self.ego.end_waypoint)
         
-        for edge_id in self.ego.route:
-            edge_info = available_lanes[edge_id]
-            edge = self.roadgraph.Edges[edge_id]
+        # for edge_id in self.ego.route:
+        #     edge_info = available_lanes[edge_id]
+        #     edge = self.roadgraph.Edges[edge_id]
             
-            # 获取当前edge中所有section的ID，按照顺序排列
-            section_list = edge.section_list
+        #     # 获取当前edge中所有section的ID，按照顺序排列
+        #     section_list = edge.section_list
             
-            # 遍历每个section
-            for section_id in section_list:
-                section = self.roadgraph.Sections[section_id]
+        #     # 遍历每个section
+        #     for section_id in section_list:
+        #         section = self.roadgraph.Sections[section_id]
                 
-                # 如果这个section在available_lane中
-                if section_id in edge_info['available_lane']:
-                    lanes = edge_info['available_lane'][section_id]
-                    if lanes:
-                        lane = lanes[0]  # 取第一条车道作为代表
-                        # 检查是否是终点所在的section
-                        if (lane.start_wp.road_id, lane.start_wp.section_id) == (self.ego.end_waypoint.road_id, self.ego.end_waypoint.section_id):
-                            # 找到终点所在的具体车道
-                            end_lane = None
-                            for l in lanes:
-                                if l.start_wp.lane_id == self.ego.end_waypoint.lane_id:
-                                    end_lane = l
-                                    break
-                            if end_lane:
-                                route_length += self.ego.end_waypoint.s
-                            else:
-                                route_length += lane.length
-                        else:
-                            route_length += lane.length
-                # 如果这个section不在available_lane中，但在change_lane中
-                elif section_id in edge_info['change_lane']:
-                    lanes = edge_info['change_lane'][section_id]
-                    if lanes:
-                        lane = lanes[0]
-                        if (lane.start_wp.road_id, lane.start_wp.section_id) == (self.ego.end_waypoint.road_id, self.ego.end_waypoint.section_id):
-                            # 找到终点所在的具体车道
-                            end_lane = None
-                            for l in lanes:
-                                if l.start_wp.lane_id == self.ego.end_waypoint.lane_id:
-                                    end_lane = l
-                                    break
-                            if end_lane:
-                                route_length += self.ego.end_waypoint.s
-                            else:
-                                route_length += lane.length
-                        else:
-                            route_length += lane.length
+        #         # 如果这个section在available_lane中
+        #         if section_id in edge_info['available_lane']:
+        #             lanes = edge_info['available_lane'][section_id]
+        #             if lanes:
+        #                 lane = lanes[0]  # 取第一条车道作为代表
+        #                 # 检查是否是终点所在的section
+        #                 if (lane.start_wp.road_id, lane.start_wp.section_id) == (self.ego.end_waypoint.road_id, self.ego.end_waypoint.section_id):
+        #                     # 找到终点所在的具体车道
+        #                     end_lane = None
+        #                     for l in lanes:
+        #                         if l.start_wp.lane_id == self.ego.end_waypoint.lane_id:
+        #                             end_lane = l
+        #                             break
+        #                     if end_lane:
+        #                         route_length += self.ego.end_waypoint.s
+        #                     else:
+        #                         route_length += lane.length
+        #                 else:
+        #                     route_length += lane.length
+        #         # 如果这个section不在available_lane中，但在change_lane中
+        #         elif section_id in edge_info['change_lane']:
+        #             lanes = edge_info['change_lane'][section_id]
+        #             if lanes:
+        #                 lane = lanes[0]
+        #                 if (lane.start_wp.road_id, lane.start_wp.section_id) == (self.ego.end_waypoint.road_id, self.ego.end_waypoint.section_id):
+        #                     # 找到终点所在的具体车道
+        #                     end_lane = None
+        #                     for l in lanes:
+        #                         if l.start_wp.lane_id == self.ego.end_waypoint.lane_id:
+        #                             end_lane = l
+        #                             break
+        #                     if end_lane:
+        #                         route_length += self.ego.end_waypoint.s
+        #                     else:
+        #                         route_length += lane.length
+        #                 else:
+        #                     route_length += lane.length
             
-            # 如果有junction_lane，也要加上
-            for junction_lane in edge_info['junction_lane']:
-                route_length += junction_lane.length
+        #     # 如果有junction_lane，也要加上
+        #     for junction_lane in edge_info['junction_lane']:
+        #         route_length += junction_lane.length
         print('route_length:',route_length)
         currTime = datetime.now()
         insertQuery = '''INSERT INTO simINFO VALUES (?, ?, ?, ?);'''
@@ -432,21 +437,29 @@ class Model:
         z=vehicle.state.z = actor.get_location().z
         yaw=vehicle.state.yaw = np.deg2rad(actor.get_transform().rotation.yaw)
 
+        vehicle.lane_id,vehicle.state.s,vehicle.state.d,vehicle.cur_wp=self.localization(vehicle)
+        
         #whether the vehicle is in the AoI
         if vehicle.id !=self.ego_id:
             ex,ey=self.ego.state.x,self.ego.state.y
             if sqrt(pow((ex - x), 2) + pow((ey - y), 2)) <= self.cfg['deArea']:
-                if not vehicle.id in self.vehINAoI.keys():
-                    self.vehINAoI[vehicle.id]=vehicle
-                if vehicle.id in self.outOfAoI.keys():
-                    del self.outOfAoI[vehicle.id]
+                #如果自车在范围内
+                if not vehicle.id in self.vehINAoI.keys():#如果车辆不在AoI中
+                    #如果车辆在junction或者道路末端，则不加入AoI
+                    lane=self.roadgraph.get_lane_by_id(vehicle.lane_id)
+                    if not (vehicle.lane_id in self.roadgraph.Junction_Dict.keys() or (vehicle.state.s > lane.course_spline.s[-1]-10)):
+                        #如果车辆不在junction或者道路末端，则加入AoI
+                        self.vehINAoI[vehicle.id]=vehicle
+                        if vehicle.id in self.outOfAoI.keys():
+                            del self.outOfAoI[vehicle.id]
+                else:
+                    pass
             else:
                 if vehicle.id in self.vehINAoI.keys():
                     del self.vehINAoI[vehicle.id]
                 if not vehicle.id in self.outOfAoI.keys():
                     self.outOfAoI[vehicle.id] = vehicle
 
-        vehicle.lane_id,vehicle.state.s,vehicle.cur_wp=self.localization(vehicle)
         
         #update lane speed limit
         current_lane = self.roadgraph.get_lane_by_id(vehicle.lane_id)
@@ -490,6 +503,7 @@ class Model:
         vehicle.routeIdxQ.append(route_idx)
         vehicle.laneIDQ.append(vehicle.lane_id)
         vehicle.lanePosQ.append(vehicle.state.s)
+        vehicle.lanePosDQ.append(vehicle.state.d)
         
         if vehicle.isAutoPilot:
             vehicle.speedQ.append(carla_vel.length())
@@ -531,18 +545,18 @@ class Model:
                     if junction_lane.id in vehicle.next_available_lanes:
                         break
                 next_lane_id=junction_lane.id
-            next_s, _ = self.roadgraph.get_lane_by_id(next_lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
+            next_s, next_d = self.roadgraph.get_lane_by_id(next_lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
             next_s = max(0, next_s)
             next_wp=self.carla_map.get_waypoint_xodr(junction_lane.start_wp.road_id,junction_lane.start_wp.lane_id,next_s)
-            return next_lane_id,next_s,next_wp
+            return next_lane_id,next_s,next_d,next_wp
 
         elif not carla_wp.is_junction:
             next_lane_id=self.roadgraph.WP2Lane[(carla_wp.road_id,carla_wp.section_id,carla_wp.lane_id)]
-            next_s, _ = self.roadgraph.get_lane_by_id(
+            next_s, next_d = self.roadgraph.get_lane_by_id(
                                next_lane_id).course_spline.cartesian_to_frenet1D(vehicle.state.x, vehicle.state.y)
             next_s = max(0, next_s)
             next_wp=carla_wp
-            return next_lane_id,next_s,next_wp
+            return next_lane_id,next_s,next_d,next_wp
                         
         raise NotImplementedError 
 
@@ -944,7 +958,7 @@ class Model:
             if k in trajectories.keys():
                 continue
             else:
-                veh.trajectory=None#TODO：虽然有bug但是每报错，难道改了汇报错吗
+                veh.trajectory=None
     
     def setControls(self,controls):
         for k,v in controls.items():

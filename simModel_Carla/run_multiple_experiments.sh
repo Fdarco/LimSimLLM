@@ -4,23 +4,23 @@
 pkill -f "python.*Example"
 
 # 实验轮次
-NUM_EXPERIMENTS=5  # 添加实验轮次参数
+NUM_EXPERIMENTS=10  # 添加实验轮次参数
 
 # 模型和场景配置
 MODELS=( 
-    # "interfuser"
+    "interfuser"
     # "PDM" 
-    "VLMagentCloseLoop"
+    # "VLMagentCloseLoop"
     # "Limsimtm"
 )
 
 SCENARIOS=(
-    # "ramp"           
-    # "intersection"   
-    # "roundabout"     
-    # "straight"       
+    "ramp"           
+    "intersection"   
+    "roundabout"     
+    "straight"       
     "curve"          
-    # "long_term"      
+    "long_term"      
 )
 
 # 为每个GPU配置基础端口
@@ -88,7 +88,7 @@ run_experiments_on_gpu() {
         
         port=$((base_port + port_offset))
         tm_port=$((port + 10))
-        port_offset=$((port_offset + 100))
+        # port_offset=$((port_offset + 100))
         
         db_name="${model}_${scenario}_${batch_timestamp}_gpu${gpu}_exp${exp_round}"
         
@@ -99,7 +99,7 @@ run_experiments_on_gpu() {
         # 计算随机数种子：使用场景索引和轮次来确定
         # 这样确保同一场景同一轮次下的不同模型使用相同的种子
         # random_seed=$((1121000 + scenario_index * 100 + exp_round))
-        random_seed=$((1230406 + scenario_index * 100 + exp_round))
+        random_seed=$((1230406 + exp_round))
 
         
         # 记录实验开始时间

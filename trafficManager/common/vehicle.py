@@ -20,6 +20,7 @@ from typing import Any, Dict, Set, Tuple
 from trafficManager.common.coord_conversion import cartesian_to_frenet2D
 from utils.roadgraph import AbstractLane, JunctionLane, NormalLane, RoadGraph
 from utils.trajectory import State
+from simModel_Carla.carlaWrapper import carlaNormalLaneWrapper
 
 import logger
 
@@ -88,6 +89,7 @@ class Vehicle:
         self.max_decel = max_decel
         self.max_speed = max_speed
         self.available_lanes = available_lanes
+        self.debug=False
 
     @property
     def current_state(self) -> State:
@@ -178,6 +180,8 @@ class Vehicle:
         Args:
             roadgraph (RoadGraph): The roadgraph containing the lanes the vehicle is traveling on.
         """
+        if self.debug:
+            breakpoint()
         current_lane = roadgraph.get_lane_by_id(self.lane_id)
         logging.debug(
             f"Vehicle {self.id} is in lane {self.lane_id}, "
@@ -244,11 +248,15 @@ class Vehicle:
                     current_lane.id, self.available_lanes)
                 try:
                     self.lane_id = next_lane.id
+                    self.current_state = self.get_state_in_lane(next_lane)
+                    current_lane = next_lane
                 except AttributeError as e:
                     print(self.id)
                     logging.error(f"Vehicle {self.id} cannot switch to the next lane, the reason is {e}")
-                self.current_state = self.get_state_in_lane(next_lane)
-                current_lane = next_lane
+                    # next_lane = carlaNormalLaneWrapper(roadgraph.roadgraph.WP2Lane[current_lane.lane.next_lane],roadgraph.roadgraph)
+                    # self.lane_id = next_lane.id
+                    # self.current_state = self.get_state_in_lane(next_lane)
+                    # current_lane = next_lane
             elif isinstance(current_lane, JunctionLane):
                 next_lane_id = current_lane.next_lane_id
                 next_lane = roadgraph.get_lane_by_id(next_lane_id)
@@ -286,6 +294,7 @@ def create_vehicle(vehicle_info: Dict, roadgraph: RoadGraph, vtype_info: Any,
     available_lanes = vehicle_info["availableLanes"]
     lane_id = vehicle_info["laneIDQ"][-1]
     lane_pos = vehicle_info["lanePosQ"][-1]
+    lane_pos_d = vehicle_info["lanePosDQ"][-1]
     pos_x = vehicle_info["xQ"][-1]
     pos_y = vehicle_info["yQ"][-1]
     yaw = vehicle_info["yawQ"][-1]
@@ -293,9 +302,12 @@ def create_vehicle(vehicle_info: Dict, roadgraph: RoadGraph, vtype_info: Any,
     # acc = vehicle_info["accelQ"].pop()
     acc = 0
 
-    lane_id, pos_s, pos_d = find_lane_position(lane_id, roadgraph,
-                                               available_lanes, lane_pos, pos_x,
-                                               pos_y)
+    #导致瞬移的罪魁祸首
+    # lane_id, pos_s, pos_d = find_lane_position(lane_id, roadgraph,
+    #                                            available_lanes, lane_pos, pos_x,
+    #                                            pos_y)
+    pos_s=lane_pos
+    pos_d=lane_pos_d
 
     init_state = State(x=pos_x,
                        y=pos_y,

@@ -152,7 +152,7 @@ def stop_trajectory_generator(vehicle: Vehicle,
         100,
     )
     if redLight:
-        min_s = s[-1] - 5
+        min_s = s[-1] - 6.5
     else:
         min_s = s[-1] + 100
     for obs in obs_list:
@@ -189,6 +189,7 @@ def stop_trajectory_generator(vehicle: Vehicle,
                 if (
                     obs.lane_id in (nextlane_id, vehicle.lane_id)
                     and abs(obs.current_state.vel - vehicle.current_state.vel) < 0.5
+                    and abs(obs.current_state.vel)>1
                 ):
                     continue
 
@@ -207,7 +208,7 @@ def stop_trajectory_generator(vehicle: Vehicle,
                     obs_near_d = max(0, abs(obs_d) - obs.shape.width / 2)
                     if obs_near_d < current_lane.width / 2:
                         min_s = min(min_s, obs_s -
-                                    obs.shape.length - car_length)
+                                    obs.shape.length - car_length-3.5)
             else:  # in normal lane
                 if isinstance(roadgraph.get_lane_by_id(obs.lane_id), NormalLane):
                     edge_1 = current_lane.affiliated_edge
@@ -218,13 +219,13 @@ def stop_trajectory_generator(vehicle: Vehicle,
                     obs_state_on_current_lane = obs.update_frenet_coord_in_lane(
                         current_lane)
                     obs_s, obs_d = obs_state_on_current_lane.s, obs_state_on_current_lane.d
-                    if obs_s <= s[0] or obs_s >= s[-1]:
+                    if obs_s <= s[0] or obs_s >= s[-1]+10:#解决追尾问题
                         continue
                     obs_near_d = max(0, abs(obs_d) - obs.shape.width / 2)
                     if obs_s > vehicle.current_state.s and obs_near_d < current_lane.width / 2:
                         # 2.0 meter as a constant parking distance
                         min_s = min(
-                            min_s, obs_s - obs.shape.length / 2 - car_length / 2 - 2.0
+                            min_s, obs_s - obs.shape.length / 2 - car_length / 2 - 3.5
                         )
                 # if obs.lane_id == current_lane.id:
                 #     obs_s, obs_d = obs.current_state.s, obs.current_state.d
@@ -252,7 +253,7 @@ def stop_trajectory_generator(vehicle: Vehicle,
                             current_lane.course_spline.s[-1]
                             - obs.shape.length / 2
                             - car_length / 2
-                            - 2.0,
+                            - 3.5,
                         )
     # Step 2:
     path = Trajectory()
@@ -274,11 +275,11 @@ def stop_trajectory_generator(vehicle: Vehicle,
             current_state.s_d * course_t / 1.5):  # no need to stop
         logging.debug(f"Vehicle {vehicle.id} No need to stop")
         if (min_s - current_state.s) < 5.0 / 3.6 * course_t:
-            target_s = min_s
+            target_s = min_s-1#TODO: 这里需要修改，可能和刹不住车有关
             target_state = State(s=target_s, s_d=5.0 / 3.6, d=0)
         else:
             # 20 km/h is the speed limit in junction lane
-            target_vel = min(20.0 / 3.6, lanes[0].speed_limit)
+            target_vel = min(30.0 / 3.6, lanes[0].speed_limit)
             target_s = (current_state.s +
                         (current_state.s_d +
                          (target_vel - current_state.s_d) / 1.3) * course_t)
@@ -301,10 +302,23 @@ def stop_trajectory_generator(vehicle: Vehicle,
     elif (min_s - current_state.s) < max(current_state.s_d**2 / (2 * max_acc),
                                          car_length / 4):  # need emergency stop
         logging.debug(f"Vehicle {vehicle.id} Emergency Brake")
-        path = frenet_optimal_planner.calc_stop_path(current_state,
-                                                     vehicle.max_decel,
-                                                     course_t, dt, config)
-        path.frenet_to_cartesian(lanes, current_state)
+        # breakpoint()
+        # path = frenet_optimal_planner.calc_stop_path(current_state,
+        #                                              -12,
+        #                                              course_t, dt, config)
+        # path.frenet_to_cartesian(lanes, current_state)
+        # path.cost = (
+        #     cost.smoothness(path, lanes[0].course_spline, config["weights"]) *
+        #     dt + cost.guidance(path, config["weights"]) * dt +
+        #     cost.acc(path, config["weights"]) * dt +
+        #     cost.jerk(path, config["weights"]) * dt +
+        #     cost.stop(config["weights"]))
+        
+        path = Trajectory()
+        for t in np.arange(0, course_t, dt):
+            path.states.append(
+                State(t=t, s=current_state.s, d=current_state.d))
+        path.frenet_to_cartesian(lanes, vehicle.current_state)
         path.cost = (
             cost.smoothness(path, lanes[0].course_spline, config["weights"]) *
             dt + cost.guidance(path, config["weights"]) * dt +

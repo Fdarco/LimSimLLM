@@ -26,6 +26,7 @@ from utils import data_copy
 from utils.trajectory import State, Trajectory
 import logger
 from simInfo.CustomExceptions import LaneChangeException
+import math
 
 logging = logger.get_logger(__name__)
 
@@ -127,6 +128,7 @@ class TrafficManager:
                 vehicles[ego_id].behaviour = ego_behaviour
             elif vehicle.vtype == VehicleType.EGO and not self.config["EGO_PLANNER"]:#use multivehicle planner to control ego car
                 vehicle.update_behaviour(roadgraph)
+                print('ego car behaviour:', vehicle.behaviour,'timeStep:',self.time_step)
 
 
         # Decision Module
@@ -151,6 +153,21 @@ class TrafficManager:
         if self.config["EGO_PLANNER"] and self.config['EGO_CONTROL']:
             ego_path = self.ego_planner.plan(vehicles[ego_id], carlaRoadgraph, None, current_time_step)
             result_paths[ego_id] = ego_path
+
+        #检查每个车生成轨迹是否和当前位置差距过大
+        record_id=[]
+        for vehicle_id, trajectory in result_paths.items():
+            if len(trajectory.states) > 1:
+                dx = trajectory.states[1].x - vehicles[vehicle_id].current_state.x
+                dy = trajectory.states[1].y - vehicles[vehicle_id].current_state.y
+                dist = math.sqrt(dx**2 + dy**2)
+                if dist > 5:
+                    logging.error(f"Vehicle {vehicle_id} generated trajectory too far away")
+                    record_id.append(vehicle_id)
+        
+        for id in record_id:
+            if id != self.ego_id:
+                del result_paths[id]
 
         # Update Last Seen
         output_trajectories = {}
@@ -182,7 +199,6 @@ class TrafficManager:
 
         if not self.config['EGO_CONTROL']:
             del output_trajectories[self.ego_id]
-        
         return output_trajectories
 
     def extract_history_tracks(self, current_time_step: int,
@@ -191,8 +207,11 @@ class TrafficManager:
         for vehicle_id in vehicles.keys():
             if vehicle_id not in self.lastseen_vehicles:
                 continue
-            history_tracks[vehicle_id] = self.lastseen_vehicles[
+            if hasattr(self.lastseen_vehicles[vehicle_id], 'trajectory'):
+                history_tracks[vehicle_id] = self.lastseen_vehicles[
                                              vehicle_id].trajectory.states[self.time_step:current_time_step]
+            else:
+                continue
 
         return history_tracks
 
@@ -237,17 +256,30 @@ class TrafficManager:
                     hasattr(self.lastseen_vehicles[vehicle_id], 'trajectory') and
                     self.lastseen_vehicles[vehicle_id].trajectory and
                     len(self.lastseen_vehicles[vehicle_id].trajectory.states) > through_timestep):
+        
                 last_state = self.lastseen_vehicles[
                     vehicle_id].trajectory.states[through_timestep]
-                vehicles[vehicle_id] = create_vehicle_lastseen(
-                    vehicle,
-                    self.lastseen_vehicles[vehicle_id],
-                    roadgraph,
-                    T,
-                    last_state,
-                    VehicleType.IN_AOI,
-                    sim_mode
-                )
+                
+                current_x = vehicle["xQ"][-1]
+                current_y = vehicle["yQ"][-1]
+                distance = ((last_state.x - current_x)**2 + (last_state.y - current_y)**2)**0.5
+                if distance > 5.0:  # 如果位置差异超过5米，则不使用last_state
+                    print(f"Vehicle {vehicle_id} distance: {distance} , not use last_state")
+                    vtype_info = self.model.allvTypes[vehicle["vTypeID"]]
+                    vehicles[vehicle_id] = create_vehicle(
+                        vehicle, roadgraph, vtype_info, T, VehicleType.IN_AOI)
+                    del self.lastseen_vehicles[vehicle_id]
+                    
+                else:
+                    vehicles[vehicle_id] = create_vehicle_lastseen(
+                        vehicle,
+                        self.lastseen_vehicles[vehicle_id],
+                        roadgraph,
+                        T,
+                        last_state,
+                        VehicleType.IN_AOI,
+                        sim_mode
+                    )
             else:
                 vtype_info = self.model.allvTypes[vehicle["vTypeID"]]
                 vehicles[vehicle_id] = create_vehicle(

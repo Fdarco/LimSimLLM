@@ -151,14 +151,31 @@ class Decision_Evaluator(Evaluator):
                 self.logging.info("the result is success!")
 
             self.SaveResultinDB(model)
-            
+            self.calculate_decision_time(model)
             self.logger.info("your final score is {}".format(round(self.final_s, 3)))
             self.logger.info("your driving mile is {} m, the route length is {} m, the complete percentage is {}%".format(round(self.driving_mile, 3), round(self.route_length, 3), round(self.complete_p*100, 3)))
             self.logger.info("your driving score is {}".format(round(self.decision_score.eval_score(self.hyper_parameter), 3)))
             self.logger.info("your driving time is {} s".format((model.timeStep - self.current_time)/10))
-
+            self.logger.info("your decision time is {} s".format(self.decision_time))
             self.decision_score.logging_score(self.hyper_parameter)
             
+        return
+    def calculate_decision_time(self, model: ReplayModel) -> None:
+        """calculate the decision time
+        """
+        conn = sqlite3.connect(model.dataBase)
+        cur = conn.cursor()
+
+        # 读取数据库获取最后timeStep个时间步的推理时间信息
+        cur.execute(f"SELECT total_time FROM QAINFO ORDER BY rowid DESC LIMIT {model.timeStep}")  
+        inference_times = [row[0] for row in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+
+        # 计算平均推理时间
+        avg_inference_time = np.mean(inference_times)
+        self.decision_time = avg_inference_time
         return
     def cal_route_length(self, model: ReplayModel) -> float:
         """Get the route length from model
@@ -407,36 +424,18 @@ class Decision_Evaluator(Evaluator):
     
     def CalculateDrivingMile(self, model: ReplayModel) -> None:
         """计算行驶里程
-        每10帧计算一次,需要考虑:
-        1. 同一车道内的行驶距离
-        2. 换道时的距离计算
-        3. 进入junction时的距离计算
+        每10帧计算一次,使用xy坐标计算实际位移距离
         """
-        # 获取10帧前和当前帧的车道ID和位置
-        prev_lane_id = model.sr.ego.laneIDQ[-11] 
-        curr_lane_id = model.sr.ego.laneIDQ[-1]
-        prev_pos = model.ego.lanePosQ[-11]
-        curr_pos = model.ego.lanePosQ[-1]
+        # 获取10帧前和当前帧的xy坐标
+        prev_x = model.ego.xQ[-11]
+        prev_y = model.ego.yQ[-11]
+        curr_x = model.ego.xQ[-1] 
+        curr_y = model.ego.yQ[-1]
         
-        if prev_lane_id == curr_lane_id:
-            # 同一车道,直接计算位置差
-            self.driving_mile += max(0, curr_pos - prev_pos)
-        else:
-            # 换道/进入junction,需要分段计算
-            # 1. 计算在上一个车道行驶的距离
-            prev_lane = model.rb.get_lane_by_id(prev_lane_id)
-            if prev_lane:
-                self.driving_mile += max(0, prev_lane.length - prev_pos)
-                
-            # 2. 计算在当前车道行驶的距离
-            self.driving_mile += max(0, curr_pos)
-            
-            # # 3. 如果中间还经过其他车道,加上这些车道的长度
-            # lane_sequence = model.sr.ego.laneIDQ[-11:-1]
-            # for lane_id in lane_sequence:
-            #     lane = model.rb.get_lane_by_id(lane_id)
-            #     if lane and lane_id != prev_lane_id and lane_id != curr_lane_id:
-            #         self.driving_mile += lane.length
+        # 计算欧氏距离
+        distance = np.sqrt((curr_x - prev_x)**2 + (curr_y - prev_y)**2)
+        self.driving_mile += max(0, distance)
+        
         return
 
     def SaveResultinDB(self, model: ReplayModel) -> None:
@@ -479,8 +478,11 @@ def getSVTrajectory(vehicle: Vehicle, roadgraph: RoadGraph, available_lanes, T: 
     prediction_trajectory = Trajectory()
     
     # if the vehicle's lane position is near the end of the lane, need the next lane to predict
-    next_lane = roadgraph.get_available_next_lane(
-        vehicle.laneID, available_lanes)
+    try:
+        next_lane = roadgraph.get_available_next_lane(
+            vehicle.laneID, available_lanes)
+    except Exception as e:
+        next_lane = None
     
     current_lane = roadgraph.get_lane_by_id(vehicle.laneID)
     lanes = [current_lane, next_lane] if next_lane != None else [

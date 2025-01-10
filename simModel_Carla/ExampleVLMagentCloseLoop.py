@@ -64,7 +64,7 @@ def retry_on_exception(exceptions, delay=1, max_retries=5):
 
 class VLMAgent:
     def __init__(self, max_tokens: int = 4000) -> None:
-        self.api_key = 'sk-vYEbj0AB8Y6kJpUT557c391dD4234727B0Bf1a46A5CeBf9f'#os.environ.get('OPENAI_API_KEY')
+        self.api_key = 'sk-vYEbj0AB8Y6kJpUT557c391dD4234727B0Bf1a46A5CeBf9f'#'sk-ZPkNfkJC2TlqsA5JJvu24IU1piYciq8b7eYWfUuJRaBDaezn'#'sk-vYEbj0AB8Y6kJpUT557c391dD4234727B0Bf1a46A5CeBf9f'#os.environ.get('OPENAI_API_KEY')
         self.max_tokens = max_tokens
         self.content = []
 
@@ -113,6 +113,7 @@ class VLMAgent:
         }
         response = requests.post(
             "https://api.key77qiqi.cn/v1/chat/completions",
+            # 'https://open.xiaojingai.com/v1/chat/completions',
             headers=headers,
             json=payload
         )
@@ -122,6 +123,7 @@ class VLMAgent:
             time.sleep(2)
             response = requests.post(
             "https://api.key77qiqi.cn/v1/chat/completions",
+            # 'https://open.xiaojingai.com/v1/chat/completions',
             headers=headers,
             json=payload
             )
@@ -173,12 +175,13 @@ class VLMAgent:
         """
         A function that makes a decision based on a prompt, measures the time it takes to make the decision, and returns various relevant data including the behavior, the decision message, prompt tokens, completion tokens, total tokens, and the time cost.
         """
-        start = time.time()
-        max_retries = 5
+        max_retries = 20
         retry_count = 0
         
         while retry_count < max_retries:
             try:
+                start = time.time()
+
                 response = self.request()
                 ans = response['choices'][0]['message']['content']
                 print("="*25+'Response Start'+ "="*25 + "\n" + ans + "\n" + "="*25+'Response End'+ "="*25)
@@ -266,7 +269,13 @@ if __name__=='__main__':
 
     model.start()
     model.runAutoPilot()
-
+    initDataProvider(model)
+    gps_route,route=route_transform(model.roadgraph,model.ego)
+    route_length = 0.0 
+    for idx,wp in enumerate(route):
+        if idx!=len(route)-1:
+            route_length+=wp[0].location.distance(route[idx+1][0].location)
+    model.simDescriptionCommit(route_length)
 
     # gui = GUI(model)
     # gui.start()

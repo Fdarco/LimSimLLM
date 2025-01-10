@@ -64,6 +64,7 @@ class Vehicle:
         self.accelQ = deque(maxlen=100)
         self.laneIDQ = deque(maxlen=100)
         self.lanePosQ = deque(maxlen=100)
+        self.lanePosDQ = deque(maxlen=100)
         self.routeIdxQ = deque(maxlen=100)
 
         self.vxQ=deque(maxlen=100)
@@ -115,6 +116,7 @@ class Vehicle:
             'xQ': self.xQ, 'yQ': self.yQ, 'yawQ': self.yawQ,
             'speedQ': self.speedQ, 'accelQ': self.accelQ,
             'laneIDQ': self.laneIDQ, 'lanePosQ': self.lanePosQ,
+            'lanePosDQ': self.lanePosDQ,
             'availableLanes': self.next_available_lanes,
             'routeIdxQ': self.routeIdxQ, 
             'width': self.width,

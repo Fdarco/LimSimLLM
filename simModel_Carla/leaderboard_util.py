@@ -1,5 +1,4 @@
 from scenario_runner.srunner.scenariomanager.carla_data_provider import CarlaDataProvider
-from simModel_Carla.Model import Model
 from Roadgraph import RoadGraph
 from vehicle import Vehicle
 from agents.navigation.global_route_planner import GlobalRoutePlanner
@@ -17,7 +16,7 @@ import time
 
 import math
 import carla
-def initDataProvider(model:Model):
+def initDataProvider(model):
         CarlaDataProvider.set_client(model.client)
         CarlaDataProvider.set_traffic_manager_port(model.tm_port)
         CarlaDataProvider.set_world(model.world)
@@ -111,9 +110,44 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
     for idx,wp_tulpe in enumerate(route):
         p=idx+1
         while p<=len(route)-1:
-            if route[p][0].location.distance(wp_tulpe[0].location)<=0.3:
+            if route[p][0].location.distance(wp_tulpe[0].location)<=0.5:
                 del route[p]
             p+=1   
+    
+    # 添加调试信息，检查第55和第56个点的详细信息
+    if len(route) > 56:
+        print("\n=== Debug information for points 55 and 56 ===")
+        # 获取第55和第56个点
+        point_55 = route[55][0]
+        point_56 = route[56][0]
+        
+        # 打印位置信息
+        print(f"Point 55 location: x={point_55.location.x:.2f}, y={point_55.location.y:.2f}, z={point_55.location.z:.2f}")
+        print(f"Point 56 location: x={point_56.location.x:.2f}, y={point_56.location.y:.2f}, z={point_56.location.z:.2f}")
+        
+        # 打印朝向信息
+        print(f"Point 55 rotation: pitch={point_55.rotation.pitch:.2f}, yaw={point_55.rotation.yaw:.2f}, roll={point_55.rotation.roll:.2f}")
+        print(f"Point 56 rotation: pitch={point_56.rotation.pitch:.2f}, yaw={point_56.rotation.yaw:.2f}, roll={point_56.rotation.roll:.2f}")
+        
+        # 计算两点之间的距离
+        distance = point_55.location.distance(point_56.location)
+        print(f"Distance between points: {distance:.2f} meters")
+        
+        # 计算朝向差异
+        heading_diff = abs(math.atan2(
+            math.sin(math.radians(point_55.rotation.yaw - point_56.rotation.yaw)),
+            math.cos(math.radians(point_55.rotation.yaw - point_56.rotation.yaw))
+        ))
+        print(f"Heading difference: {math.degrees(heading_diff):.2f} degrees")
+        
+        # 检查是否在同一车道
+        wp_55 = CarlaDataProvider.get_map().get_waypoint(point_55.location)
+        wp_56 = CarlaDataProvider.get_map().get_waypoint(point_56.location)
+        print(f"Point 55 road_id={wp_55.road_id}, lane_id={wp_55.lane_id}, section_id={wp_55.section_id}")
+        print(f"Point 56 road_id={wp_56.road_id}, lane_id={wp_56.lane_id}, section_id={wp_56.section_id}")
+        print(f"Same lane: {on_same_lane(wp_55, wp_56)}")
+        print("=======================================\n")
+
     check_route_edge=rd.get_route_edge(check_route)
     if check_route_edge!=veh.route:
         # 如果路径不匹配，重新规划一次路径
@@ -144,10 +178,38 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
                 if is_lane_change:
                     # 计算距离和朝向差异
                     dist = current_wp.transform.location.distance(next_wp.transform.location)
+                    
+                    # 获取当前点和下一个点的实际朝向（考虑车道方向）
+                    current_yaw = current_wp.transform.rotation.yaw
+                    next_yaw = next_wp.transform.rotation.yaw
+                    
+                    # 如果是变道点，获取目标车道的朝向
+                    if left_wp and on_same_lane(left_wp, next_wp):
+                        current_yaw = left_wp.transform.rotation.yaw
+                    elif right_wp and on_same_lane(right_wp, next_wp):
+                        current_yaw = right_wp.transform.rotation.yaw
+                    
+                    # 重新计算朝向差异，考虑车道实际方向
                     heading_diff = abs(math.atan2(
-                        math.sin(math.radians(current_wp.transform.rotation.yaw - next_wp.transform.rotation.yaw)),
-                        math.cos(math.radians(current_wp.transform.rotation.yaw - next_wp.transform.rotation.yaw))
+                        math.sin(math.radians(current_yaw - next_yaw)),
+                        math.cos(math.radians(current_yaw - next_yaw))
                     ))
+                    
+                    # 特别调试第55和第56个点
+                    if len(smoothed_route) == 55 and idx == 55:
+                        print("\n=== Smoothing Debug for points 55 and 56 ===")
+                        print(f"Current point (55) location: x={current_wp.transform.location.x:.2f}, y={current_wp.transform.location.y:.2f}")
+                        print(f"Next point (56) location: x={next_wp.transform.location.x:.2f}, y={next_wp.transform.location.y:.2f}")
+                        print(f"Current yaw (55): {current_yaw:.2f}")
+                        print(f"Next yaw (56): {next_yaw:.2f}")
+                        print(f"Distance: {dist:.2f}")
+                        print(f"Heading difference: {math.degrees(heading_diff):.2f} degrees")
+                        print(f"Is lane change: {is_lane_change}")
+                        if left_wp:
+                            print(f"Left lane yaw: {left_wp.transform.rotation.yaw:.2f}")
+                        if right_wp:
+                            print(f"Right lane yaw: {right_wp.transform.rotation.yaw:.2f}")
+                        print("=======================================\n")
                     
                     # 如果变道点不合理，跳过下一个点
                     if dist < 5.0 and heading_diff < math.radians(15):
@@ -175,44 +237,80 @@ def route_transform(rd:RoadGraph,veh:Vehicle, hop_resolution=2.0):
         for idx,wp_tulpe in enumerate(route):
             p=idx+1
             while p<=len(route)-1:
-                if route[p][0].location.distance(wp_tulpe[0].location)<=0.3:
+                if route[p][0].location.distance(wp_tulpe[0].location)<=0.5:
                     del route[p]
                 p+=1
-    # 在返回之前添加最终清理步骤
+    # 在返回之前添加最终轨迹平滑
     final_route = []
     idx = 0
     while idx < len(route):
         current_transform, connection = route[idx]
+        final_route.append((current_transform, connection))
         
-        # 检查是否需要添加当前点
-        should_add = True
-        current_wp = CarlaDataProvider.get_map().get_waypoint(current_transform.location)
-        
-        # 检查前后点的车道情况
-        if idx > 0 and idx < len(route) - 1:
-            prev_wp = CarlaDataProvider.get_map().get_waypoint(route[idx-1][0].location)
-            next_wp = CarlaDataProvider.get_map().get_waypoint(route[idx+1][0].location)
+        # 从当前点开始，寻找下一个合适的点
+        next_idx = idx + 1
+        while next_idx < len(route):
+            next_transform = route[next_idx][0]
             
-            # 如果当前点与前后点都不在同一车道，且前后点在同一车道，说明这是一个孤立的变道点
-            if (not on_same_lane(current_wp, prev_wp) and 
-                not on_same_lane(current_wp, next_wp) and 
-                on_same_lane(prev_wp, next_wp)):
-                # 计算前后点的距离，如果距离合理，则删除当前点
-                dist = route[idx-1][0].location.distance(route[idx+1][0].location)
-                if dist < 8.0:  # 使用更大的阈值，因为这是跨越整个变道的距离
-                    should_add = False
-                    print(f"Removing isolated lane change point at index {idx}")
-        
-        if should_add:
-            final_route.append((current_transform, connection))
+            # 获取当前点和下一个点的waypoint
+            current_wp = CarlaDataProvider.get_map().get_waypoint(current_transform.location)
+            next_wp = CarlaDataProvider.get_map().get_waypoint(next_transform.location)
+            
+            # 计算距离和朝向差异
+            dist = current_transform.location.distance(next_transform.location)
+            
+            # 获取当前点和下一个点的实际朝向
+            current_yaw = current_wp.transform.rotation.yaw
+            next_yaw = next_wp.transform.rotation.yaw
+            
+            # 如果在不同车道上，获取目标车道的朝向
+            if not on_same_lane(current_wp, next_wp):
+                left_wp = current_wp.get_left_lane() if current_wp.lane_change==carla.libcarla.LaneChange.Both or current_wp.lane_change==carla.libcarla.LaneChange.Left else None
+                right_wp = current_wp.get_right_lane() if current_wp.lane_change==carla.libcarla.LaneChange.Both or current_wp.lane_change==carla.libcarla.LaneChange.Right else None
+                
+                if left_wp and on_same_lane(left_wp, next_wp):
+                    current_yaw = left_wp.transform.rotation.yaw
+                elif right_wp and on_same_lane(right_wp, next_wp):
+                    current_yaw = right_wp.transform.rotation.yaw
+            
+            # 计算朝向差异
+            heading_diff = abs(math.atan2(
+                math.sin(math.radians(current_yaw - next_yaw)),
+                math.cos(math.radians(current_yaw - next_yaw))
+            ))
+            
+            # 调试输出
+            if idx == 55:
+                print(f"\n=== Smoothing Debug for point {idx} and {next_idx} ===")
+                print(f"Distance: {dist:.2f}")
+                print(f"Heading difference: {math.degrees(heading_diff):.2f} degrees")
+                print(f"Same lane: {on_same_lane(current_wp, next_wp)}")
+                print("=======================================\n")
+            
+            # 如果距离太近或朝向差异太大，跳过这个点
+            if (dist < 3.0 and heading_diff < math.radians(15)) or \
+               (not on_same_lane(current_wp, next_wp) and dist < 5.0 and heading_diff < math.radians(15)):
+                next_idx += 1
+            else:
+                # 找到合适的点，更新idx
+                idx = next_idx - 1
+                break
+            
         idx += 1
     
-    # 更新route为清理后的路径
+    # 更新route为平滑后的路径
     route = final_route
     
+    # 添加终点附近的额外路点
     route.append((veh.end_waypoint.next(3.0)[0].transform,route[-1][1]))
     route.append((veh.end_waypoint.next(6.0)[0].transform,route[-1][1]))
     route.append((veh.end_waypoint.next(10.0)[0].transform,route[-1][1]))
+
+    # 重新生成gps_route以保持同步
+    gps_route = []
+    for transform, connection in route:
+        gps_coord = _location_to_gps(lat_ref, lon_ref, transform.location)
+        gps_route.append((gps_coord, connection))
 
     return gps_route, route
 
